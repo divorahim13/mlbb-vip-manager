@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { formatRupiah } from '../utils/pricing';
-import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox, Gamepad2 } from 'lucide-react';
+import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox, Gamepad2, Heart } from 'lucide-react';
 
 export default function FinancialView({
   orders,
@@ -26,9 +26,13 @@ export default function FinancialView({
     return orders.reduce((sum, o) => sum + (Number(o.priceTotal) || 0), 0);
   }, [orders]);
 
+  // Kurang Bayar (Piutang) excluding GRATIS orders
   const totalOutstanding = useMemo(() => {
-    return Math.max(0, totalBilled - totalRevenue);
-  }, [totalBilled, totalRevenue]);
+    return orders.reduce((sum, o) => {
+      if (o.paymentStatus === 'GRATIS' || o.isFree) return sum;
+      return sum + Math.max(0, (Number(o.priceTotal) || 0) - (Number(o.amountPaid) || 0));
+    }, 0);
+  }, [orders]);
 
   const totalMatchesOrdered = useMemo(() => {
     return orders.reduce((sum, o) => sum + (Number(o.matchesOrdered) || 0), 0);
@@ -41,6 +45,11 @@ export default function FinancialView({
 
   const vipRevenue = useMemo(() => {
     return orders.filter(o => o.orderType !== 'JOKI').reduce((sum, o) => sum + (Number(o.amountPaid) || 0), 0);
+  }, [orders]);
+
+  // Free / Pacar orders count
+  const freeOrdersCount = useMemo(() => {
+    return orders.filter(o => o.paymentStatus === 'GRATIS' || o.isFree).length;
   }, [orders]);
 
   // Breakdown by payment method
@@ -108,7 +117,7 @@ export default function FinancialView({
           <div className="text-2xl font-black text-amber-400 mt-2">
             {formatRupiah(totalOutstanding)}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Sisa tagihan yang belum lunas</p>
+          <p className="text-[11px] text-slate-400 mt-1">Sisa tagihan yang belum lunas (Gratis Rp 0 tidak dihitung piutang)</p>
         </div>
 
         {/* Total Tagihan */}
@@ -122,13 +131,15 @@ export default function FinancialView({
           <div className="text-2xl font-black text-white mt-2">
             {formatRupiah(totalBilled)}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Akumulasi seluruh pesanan Joki & VIP</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Akumulasi seluruh pesanan • {freeOrdersCount} Gratis/Pacar 💖
+          </p>
         </div>
 
         {/* Total Match Terjual */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Match Terjual</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Match Terdaftar</span>
             <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
               🎮
             </div>
@@ -180,13 +191,26 @@ export default function FinancialView({
         {/* Breakdown chips */}
         {methodEntries.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mt-3">
-            {methodEntries.map(([method, data]) => (
-              <div key={method} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                <div className="text-[11px] font-bold text-slate-400 truncate">{method}</div>
-                <div className="text-xs font-black text-amber-400 mt-0.5">{formatRupiah(data.amount)}</div>
-                <div className="text-[10px] text-slate-400">{data.count} transaksi</div>
-              </div>
-            ))}
+            {methodEntries.map(([method, data]) => {
+              const isFreeMethod = method.includes('Pacar') || method.includes('Gratis');
+              return (
+                <div
+                  key={method}
+                  className={`p-2.5 rounded-xl border ${
+                    isFreeMethod
+                      ? 'bg-pink-950/30 border-pink-500/40 text-pink-300'
+                      : 'bg-slate-950 border-slate-800'
+                  }`}
+                >
+                  <div className="text-[11px] font-bold text-slate-400 truncate flex items-center gap-1">
+                    {isFreeMethod && <Heart className="w-3 h-3 fill-pink-500 text-pink-500 shrink-0" />}
+                    <span className="truncate">{method}</span>
+                  </div>
+                  <div className="text-xs font-black text-amber-400 mt-0.5">{formatRupiah(data.amount)}</div>
+                  <div className="text-[10px] text-slate-400">{data.count} pesanan</div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-6 text-xs text-slate-500">
@@ -237,6 +261,7 @@ export default function FinancialView({
               >
                 <option value="ALL">Semua Status</option>
                 <option value="LUNAS">Lunas</option>
+                <option value="GRATIS">💖 Gratis / Pacar</option>
                 <option value="DP">DP (Kurang)</option>
                 <option value="BELUM_BAYAR">Belum Bayar</option>
               </select>
@@ -272,7 +297,8 @@ export default function FinancialView({
                 </tr>
               ) : (
                 filteredOrders.map((ord) => {
-                  const underpaid = Math.max(0, (ord.priceTotal || 0) - (ord.amountPaid || 0));
+                  const isFree = ord.paymentStatus === 'GRATIS' || ord.isFree;
+                  const underpaid = isFree ? 0 : Math.max(0, (ord.priceTotal || 0) - (ord.amountPaid || 0));
                   const isJoki = ord.orderType === 'JOKI';
 
                   return (
@@ -323,7 +349,11 @@ export default function FinancialView({
                       </td>
 
                       <td className="py-3 px-3 font-semibold text-slate-200">
-                        {formatRupiah(ord.priceTotal)}
+                        {isFree ? (
+                          <span className="text-pink-400 font-bold">Rp 0 (Gratis)</span>
+                        ) : (
+                          formatRupiah(ord.priceTotal)
+                        )}
                       </td>
 
                       <td className="py-3 px-3 font-black text-emerald-400">
@@ -333,14 +363,16 @@ export default function FinancialView({
                       <td className="py-3 px-3">
                         <span
                           className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                            ord.paymentStatus === 'LUNAS'
+                            ord.paymentStatus === 'GRATIS'
+                              ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40'
+                              : ord.paymentStatus === 'LUNAS'
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               : ord.paymentStatus === 'DP'
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                               : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                           }`}
                         >
-                          {ord.paymentStatus}
+                          {ord.paymentStatus === 'GRATIS' ? '💖 GRATIS' : ord.paymentStatus}
                         </span>
                         {underpaid > 0 && (
                           <div className="text-[10px] text-amber-400 font-bold mt-0.5">
@@ -351,7 +383,7 @@ export default function FinancialView({
 
                       <td className="py-3 px-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {ord.paymentStatus !== 'LUNAS' && (
+                          {ord.paymentStatus !== 'LUNAS' && ord.paymentStatus !== 'GRATIS' && (
                             <button
                               onClick={() => onMarkPaid(ord.id)}
                               title="Set Lunas"

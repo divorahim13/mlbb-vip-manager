@@ -259,12 +259,14 @@ export default function WaitingQueue({
                             <span>{formatRupiah(order.amountPaid)}</span>
                             <span
                               className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
-                                order.paymentStatus === 'LUNAS'
+                                order.paymentStatus === 'GRATIS'
+                                  ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40'
+                                  : order.paymentStatus === 'LUNAS'
                                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                                   : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                               }`}
                             >
-                              {order.paymentStatus}
+                              {order.paymentStatus === 'GRATIS' ? '💖 GRATIS' : order.paymentStatus}
                             </span>
                           </div>
                         </div>
@@ -306,7 +308,7 @@ export default function WaitingQueue({
                         </button>
 
                         {/* If DP or Belum Bayar, Quick Pelunasan button */}
-                        {order.paymentStatus !== 'LUNAS' && (
+                        {order.paymentStatus !== 'LUNAS' && order.paymentStatus !== 'GRATIS' && (
                           <button
                             onClick={() => onMarkPaid(order.id)}
                             title="Tandai Pembayaran Lunas"

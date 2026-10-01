@@ -2,31 +2,38 @@
 // Aturan:
 // - Per match satuan: Rp 7.000
 // - Per lima (5) match: Rp 6.000 / match = Rp 30.000 per 5 match (berlaku kelipatan)
-// - Contoh:
-//   * 1 match = Rp 7.000
-//   * 4 match = 4 x 7.000 = Rp 28.000
-//   * 5 match = 1 x 30.000 = Rp 30.000 (Hemat Rp 5.000)
-//   * 7 match = 1x paket 5 (30.000) + 2x satuan (14.000) = Rp 44.000
-//   * 10 match = 2 x 30.000 = Rp 60.000 (Hemat Rp 10.000)
+// - Mendukung Harga Khusus / Custom Price & Harga Gratis (Rp 0 untuk Pacar/Promo)
 
 export const RATE_SINGLE = 7000;
 export const RATE_BUNDLE_PER_MATCH = 6000;
 export const BUNDLE_SIZE = 5;
 export const RATE_BUNDLE_5 = RATE_BUNDLE_PER_MATCH * BUNDLE_SIZE; // Rp 30.000
 
-export function calculatePricing(matches) {
+export function calculatePricing(matches, customPrice = null, isFree = false) {
   const count = Math.max(0, parseInt(matches, 10) || 0);
   const bundleCount = Math.floor(count / BUNDLE_SIZE);
   const remainder = count % BUNDLE_SIZE;
 
   const bundleTotal = bundleCount * RATE_BUNDLE_5;
   const remainderTotal = remainder * RATE_SINGLE;
-  const total = bundleTotal + remainderTotal;
+  const standardTotal = bundleTotal + remainderTotal;
 
   // Normal price without discount
   const normalPrice = count * RATE_SINGLE;
+
+  let total = standardTotal;
+  let isCustom = false;
+
+  if (isFree) {
+    total = 0;
+    isCustom = true;
+  } else if (customPrice !== null && customPrice !== undefined && customPrice !== '') {
+    total = Math.max(0, parseInt(customPrice, 10) || 0);
+    isCustom = true;
+  }
+
   const savings = Math.max(0, normalPrice - total);
-  const effectivePerMatch = count > 0 ? Math.round(total / count) : RATE_SINGLE;
+  const effectivePerMatch = count > 0 ? Math.round(total / count) : 0;
 
   return {
     count,
@@ -34,10 +41,13 @@ export function calculatePricing(matches) {
     remainder,
     bundleTotal,
     remainderTotal,
+    standardTotal,
     total,
     savings,
     effectivePerMatch,
-    normalPrice
+    normalPrice,
+    isCustom,
+    isFree
   };
 }
 

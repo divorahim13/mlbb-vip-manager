@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { calculatePricing, formatRupiah } from '../utils/pricing';
-import { Crown, Sparkles, Check, DollarSign, Smartphone, User, Swords, ShieldCheck, Tag, Info, Gamepad2, UserCheck, KeyRound } from 'lucide-react';
+import { Crown, Sparkles, Check, DollarSign, Smartphone, User, Swords, ShieldCheck, Tag, Info, Gamepad2, UserCheck, KeyRound, Heart, Gift, Plus, Minus } from 'lucide-react';
 
 const PAYMENT_METHODS = [
+  '🎁 Khusus Pacar / Gratis',
   'DANA',
   'GoPay',
   'OVO',
@@ -35,6 +36,11 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
   const [accountLogin, setAccountLogin] = useState(''); // Catatan login untuk Joki Akun
   const [role, setRole] = useState(defaultOrderType === 'JOKI' ? 'Gold Lane' : 'Mid Lane');
   const [matches, setMatches] = useState(5);
+  
+  // Pricing mode: 'STANDARD' | 'FREE_PACAR' | 'CUSTOM'
+  const [priceType, setPriceType] = useState('STANDARD');
+  const [customPriceInput, setCustomPriceInput] = useState('');
+  
   const [paymentMethod, setPaymentMethod] = useState('DANA');
   const [amountPaid, setAmountPaid] = useState('');
   const [transferNote, setTransferNote] = useState('');
@@ -53,23 +59,35 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
     }
   }, [orderType]);
 
-  // Pricing calculation
-  const pricing = calculatePricing(matches);
+  // Calculate pricing based on current mode
+  const isFree = priceType === 'FREE_PACAR';
+  const customPrice = priceType === 'CUSTOM' ? customPriceInput : null;
+  const pricing = calculatePricing(matches, customPrice, isFree);
 
-  // Auto update amountPaid when matches changes (default to Lunas)
+  // Auto update amountPaid and paymentMethod when pricing mode changes
   useEffect(() => {
-    setAmountPaid(pricing.total.toString());
-  }, [pricing.total]);
+    if (isFree) {
+      setAmountPaid('0');
+      setPaymentMethod('🎁 Khusus Pacar / Gratis');
+    } else {
+      setAmountPaid(pricing.total.toString());
+      if (paymentMethod === '🎁 Khusus Pacar / Gratis') {
+        setPaymentMethod('DANA');
+      }
+    }
+  }, [priceType, pricing.total]);
 
   if (!isOpen) return null;
 
-  const handleMatchSelect = (num) => {
-    setMatches(num);
+  const handleMatchChange = (delta) => {
+    setMatches(prev => Math.max(1, prev + delta));
   };
 
   const currentPaid = Number(amountPaid) || 0;
   let paymentStatus = 'LUNAS';
-  if (currentPaid === 0) {
+  if (isFree || pricing.total === 0) {
+    paymentStatus = 'GRATIS';
+  } else if (currentPaid === 0) {
     paymentStatus = 'BELUM_BAYAR';
   } else if (currentPaid < pricing.total) {
     paymentStatus = 'DP';
@@ -94,10 +112,12 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
       matchesOrdered: pricing.count,
       matchesRemaining: pricing.count,
       priceTotal: pricing.total,
-      amountPaid: currentPaid,
+      amountPaid: isFree ? 0 : currentPaid,
       paymentMethod,
       paymentStatus,
-      transferNote: transferNote.trim(),
+      isFree,
+      priceType,
+      transferNote: transferNote.trim() || (isFree ? '💖 Khusus Pacar / Gratis' : ''),
       directToRoom: directToRoom && hasEmptySlot
     };
 
@@ -107,7 +127,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative my-8">
+      <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative my-8 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
@@ -186,7 +206,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Nickname Game"
+                  placeholder="Contoh: Nickname Game / Pacar"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"
@@ -264,114 +284,191 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
             )}
           </div>
 
-          {/* Section: Match Calculator with Kelipatan Rules */}
+          {/* Section: Match Input (Bebas Input Jumlah Match) */}
           <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5" /> Pilih Paket Match & Hitung Harga
+                <Tag className="w-3.5 h-3.5" /> Jumlah Match (Bebas Diisi)
               </label>
               <span className="text-[10px] text-slate-400 font-semibold">
-                Rp 7.000/match • Tiap 5 match = Rp 30.000 (Rp 6.000/match)
+                Ketik berapa saja match
               </span>
             </div>
 
-            {/* Match Quick Preset Buttons */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {/* Free Match Direct Input with Step Buttons */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => handleMatchSelect(1)}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold border transition-all text-center ${
-                  matches === 1
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-glow-gold'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
-                }`}
+                onClick={() => handleMatchChange(-1)}
+                className="w-9 h-9 bg-slate-900 border border-slate-700 hover:border-amber-400 text-white rounded-lg flex items-center justify-center font-bold text-base transition-colors"
+                title="Kurang 1 Match"
               >
-                <div>1 Match</div>
-                <div className="text-[10px] font-normal opacity-80">Rp 7.000</div>
+                <Minus className="w-4 h-4" />
               </button>
 
-              <button
-                type="button"
-                onClick={() => handleMatchSelect(3)}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold border transition-all text-center ${
-                  matches === 3
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-glow-gold'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
-                }`}
-              >
-                <div>3 Match</div>
-                <div className="text-[10px] font-normal opacity-80">Rp 21.000</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleMatchSelect(5)}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold border transition-all text-center relative ${
-                  matches === 5
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-glow-gold'
-                    : 'bg-slate-900 border-amber-500/40 text-amber-300 hover:border-amber-400'
-                }`}
-              >
-                <span className="absolute -top-2 right-1 text-[8px] bg-red-600 text-white font-black px-1 rounded-full uppercase">
-                  Hemat 5k
-                </span>
-                <div>5 Match ⭐</div>
-                <div className="text-[10px] font-normal opacity-90">Rp 30.000</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleMatchSelect(10)}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold border transition-all text-center relative ${
-                  matches === 10
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-glow-gold'
-                    : 'bg-slate-900 border-amber-500/40 text-amber-300 hover:border-amber-400'
-                }`}
-              >
-                <span className="absolute -top-2 right-1 text-[8px] bg-red-600 text-white font-black px-1 rounded-full uppercase">
-                  Hemat 10k
-                </span>
-                <div>10 Match 👑</div>
-                <div className="text-[10px] font-normal opacity-90">Rp 60.000</div>
-              </button>
-            </div>
-
-            {/* Custom Match Input */}
-            <div className="flex items-center gap-3 pt-1">
-              <span className="text-xs text-slate-400 whitespace-nowrap">Atau Jumlah Custom:</span>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={matches}
-                onChange={(e) => setMatches(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="w-20 bg-slate-900 border border-slate-700 text-amber-400 font-extrabold text-sm px-2.5 py-1 rounded text-center focus:outline-none"
-              />
-              <span className="text-xs text-slate-400">Match</span>
-            </div>
-
-            {/* Formula Breakdown & Price Result Box */}
-            <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-3 text-xs space-y-1.5">
-              <div className="flex justify-between text-slate-300">
-                <span>Rincian Paket ({matches} Match):</span>
-                <span className="text-slate-400 font-mono">
-                  {pricing.bundleCount > 0 && `${pricing.bundleCount}x Paket 5 (${formatRupiah(pricing.bundleTotal)}) `}
-                  {pricing.remainder > 0 && `+ ${pricing.remainder}x Satuan (${formatRupiah(pricing.remainderTotal)})`}
+              <div className="flex-1 relative">
+                <input
+                  type="number"
+                  min="1"
+                  value={matches}
+                  onChange={(e) => setMatches(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="w-full bg-slate-900 border border-amber-500/50 focus:border-amber-400 text-amber-300 font-black text-lg py-1.5 px-3 rounded-lg text-center focus:outline-none"
+                  placeholder="Jumlah match"
+                />
+                <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-semibold pointer-events-none">
+                  Match
                 </span>
               </div>
 
-              {pricing.savings > 0 && (
-                <div className="flex justify-between text-emerald-400 font-semibold text-[11px]">
-                  <span>🎉 Diskon Kelipatan 5:</span>
-                  <span>Hemat {formatRupiah(pricing.savings)}</span>
+              <button
+                type="button"
+                onClick={() => handleMatchChange(1)}
+                className="w-9 h-9 bg-slate-900 border border-slate-700 hover:border-amber-400 text-white rounded-lg flex items-center justify-center font-bold text-base transition-colors"
+                title="Tambah 1 Match"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Match Quick Preset Shortcuts */}
+            <div className="grid grid-cols-4 gap-2 pt-1">
+              {[1, 3, 5, 10].map((num) => (
+                <button
+                  type="button"
+                  key={num}
+                  onClick={() => setMatches(num)}
+                  className={`py-1.5 px-1 rounded-lg text-xs font-bold border transition-all text-center ${
+                    matches === num
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-glow-gold'
+                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  {num} Match {num === 5 && '⭐'} {num === 10 && '👑'}
+                </button>
+              ))}
+            </div>
+
+            {/* Pricing Mode Selector: Standar vs Gratis / Pacar vs Custom Nego */}
+            <div className="pt-2 border-t border-slate-800">
+              <label className="text-[11px] font-bold text-slate-300 mb-1.5 block">
+                Pilih Skema Harga:
+              </label>
+
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPriceType('STANDARD')}
+                  className={`py-2 px-2 rounded-lg text-xs font-bold border flex flex-col items-center justify-center transition-all ${
+                    priceType === 'STANDARD'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-glow-gold'
+                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <span>⚡ Standar</span>
+                  <span className="text-[9px] opacity-80">7k / Paket 5=30k</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPriceType('FREE_PACAR')}
+                  className={`py-2 px-2 rounded-lg text-xs font-bold border flex flex-col items-center justify-center transition-all ${
+                    priceType === 'FREE_PACAR'
+                      ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white border-pink-400 font-black shadow-lg shadow-pink-500/30'
+                      : 'bg-pink-950/30 border-pink-500/30 text-pink-300 hover:border-pink-500/60'
+                  }`}
+                >
+                  <span className="flex items-center gap-1">
+                    <Heart className="w-3 h-3 fill-current text-pink-300" />
+                    <span>💖 Gratis</span>
+                  </span>
+                  <span className="text-[9px] opacity-90">Khusus Pacar (Rp 0)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPriceType('CUSTOM')}
+                  className={`py-2 px-2 rounded-lg text-xs font-bold border flex flex-col items-center justify-center transition-all ${
+                    priceType === 'CUSTOM'
+                      ? 'bg-blue-600 text-white border-blue-400 font-black shadow-glow-blue'
+                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <span className="flex items-center gap-1">
+                    <Tag className="w-3 h-3" />
+                    <span>🏷️ Custom</span>
+                  </span>
+                  <span className="text-[9px] opacity-80">Harga Khusus / Nego</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Custom Price Input if priceType === 'CUSTOM' */}
+            {priceType === 'CUSTOM' && (
+              <div className="bg-blue-950/30 border border-blue-500/40 rounded-xl p-3 space-y-1.5 animate-fadeIn">
+                <label className="block text-xs font-bold text-blue-300">
+                  Input Nominal Harga Khusus (Rp):
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-bold">Rp</span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Contoh: 15000"
+                    value={customPriceInput}
+                    onChange={(e) => setCustomPriceInput(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 focus:border-blue-400 rounded-lg px-3 py-1.5 text-xs text-white font-mono focus:outline-none"
+                  />
                 </div>
-              )}
-
-              <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-sm font-black">
-                <span className="text-white">TOTAL TAGIHAN:</span>
-                <span className="text-base text-amber-400 font-extrabold">{formatRupiah(pricing.total)}</span>
+                <p className="text-[10px] text-slate-400">
+                  Normal: {formatRupiah(pricing.normalPrice)} untuk {matches} match.
+                </p>
               </div>
-            </div>
+            )}
+
+            {/* Price Result Box */}
+            {priceType === 'FREE_PACAR' ? (
+              <div className="bg-pink-950/40 border border-pink-500/40 rounded-xl p-3 text-xs space-y-1.5 animate-fadeIn">
+                <div className="flex items-center gap-2 text-pink-300 font-extrabold">
+                  <Heart className="w-4 h-4 fill-pink-500 text-pink-500" />
+                  <span>Harga Spesial Gratis / Khusus Pacar (Rp 0)</span>
+                </div>
+                <p className="text-[11px] text-pink-200/80">
+                  {matches} Match bebas dimainkan tanpa tagihan biaya. Status otomatis terdata <strong>GRATIS</strong> (tidak dihitung sebagai piutang).
+                </p>
+                <div className="flex justify-between items-center pt-2 border-t border-pink-500/20 text-sm font-black">
+                  <span className="text-white">TOTAL TAGIHAN:</span>
+                  <span className="text-base text-pink-400 font-extrabold">Rp 0 (GRATIS 💖)</span>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-3 text-xs space-y-1.5">
+                <div className="flex justify-between text-slate-300">
+                  <span>Rincian Paket ({matches} Match):</span>
+                  <span className="text-slate-400 font-mono">
+                    {priceType === 'CUSTOM' ? (
+                      `Harga Khusus Custom`
+                    ) : (
+                      <>
+                        {pricing.bundleCount > 0 && `${pricing.bundleCount}x Paket 5 (${formatRupiah(pricing.bundleTotal)}) `}
+                        {pricing.remainder > 0 && `+ ${pricing.remainder}x Satuan (${formatRupiah(pricing.remainderTotal)})`}
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                {pricing.savings > 0 && (
+                  <div className="flex justify-between text-emerald-400 font-semibold text-[11px]">
+                    <span>🎉 Diskon Hemat:</span>
+                    <span>Hemat {formatRupiah(pricing.savings)}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-sm font-black">
+                  <span className="text-white">TOTAL TAGIHAN:</span>
+                  <span className="text-base text-amber-400 font-extrabold">{formatRupiah(pricing.total)}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section: Payment / Transfer Tracking */}
@@ -400,10 +497,13 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
                 </label>
                 <input
                   type="number"
+                  disabled={isFree}
                   value={amountPaid}
                   onChange={(e) => setAmountPaid(e.target.value)}
                   placeholder="0"
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none"
+                  className={`w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none ${
+                    isFree ? 'opacity-50 cursor-not-allowed text-pink-300' : ''
+                  }`}
                 />
               </div>
             </div>
@@ -411,11 +511,11 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
             {/* Note & Payment Status Badge */}
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1">
-                Catatan Transfer (Atas Nama / No. Ref)
+                Catatan Transfer (Atas Nama / Catatan Khusus)
               </label>
               <input
                 type="text"
-                placeholder="Contoh: a/n Divo BCA jam 19.30"
+                placeholder={isFree ? 'Khusus pacar tercinta / promo spesial' : 'Contoh: a/n Divo BCA jam 19.30'}
                 value={transferNote}
                 onChange={(e) => setTransferNote(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"
@@ -427,14 +527,17 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
               <span className="text-slate-400 font-semibold">Status Pembayaran:</span>
               <span
                 className={`font-black px-2 py-0.5 rounded text-xs uppercase ${
-                  paymentStatus === 'LUNAS'
+                  paymentStatus === 'GRATIS'
+                    ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40'
+                    : paymentStatus === 'LUNAS'
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                     : paymentStatus === 'DP'
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                     : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
                 }`}
               >
-                {paymentStatus} {paymentStatus === 'DP' && `(Kurang ${formatRupiah(pricing.total - currentPaid)})`}
+                {paymentStatus === 'GRATIS' ? '💖 GRATIS' : paymentStatus}{' '}
+                {paymentStatus === 'DP' && `(Kurang ${formatRupiah(pricing.total - currentPaid)})`}
               </span>
             </div>
 
@@ -465,9 +568,13 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
             </button>
             <button
               type="submit"
-              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-glow-gold transition-all transform active:scale-95"
+              className={`font-black px-5 py-2.5 rounded-xl text-xs sm:text-sm transition-all transform active:scale-95 shadow-md ${
+                isFree
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 text-white shadow-pink-500/30'
+                  : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-glow-gold'
+              }`}
             >
-              Simpan & Daftarkan
+              {isFree ? '💖 Daftarkan Gratis' : 'Simpan & Daftarkan'}
             </button>
           </div>
         </form>

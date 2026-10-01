@@ -209,12 +209,14 @@ export default function RoomParty({
                     </span>
                     <span
                       className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                        order.paymentStatus === 'LUNAS'
+                        order.paymentStatus === 'GRATIS'
+                          ? 'bg-pink-500/20 text-pink-300 border border-pink-500/40'
+                          : order.paymentStatus === 'LUNAS'
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                           : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                       }`}
                     >
-                      {order.paymentStatus}
+                      {order.paymentStatus === 'GRATIS' ? '💖 GRATIS' : order.paymentStatus}
                     </span>
                   </div>
 

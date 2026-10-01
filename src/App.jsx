@@ -300,7 +300,7 @@ export default function App() {
   };
 
   // Confirm Top Up
-  const handleTopUpConfirm = ({ orderId, addMatches, additionalPrice, additionalPaid, paymentMethod }) => {
+  const handleTopUpConfirm = ({ orderId, addMatches, additionalPrice, additionalPaid, paymentMethod, isFree }) => {
     setOrders(orders.map(o => {
       if (o.id === orderId) {
         const newTotalMatches = o.matchesOrdered + addMatches;
@@ -308,7 +308,17 @@ export default function App() {
         const newPriceTotal = o.priceTotal + additionalPrice;
         const newAmountPaid = o.amountPaid + additionalPaid;
         const newStatus = newRemaining > 0 ? (o.roomSlot ? 'IN_ROOM' : 'WAITING') : 'COMPLETED';
-        const newPaymentStatus = newAmountPaid >= newPriceTotal ? 'LUNAS' : (newAmountPaid > 0 ? 'DP' : 'BELUM_BAYAR');
+        
+        let newPaymentStatus = 'LUNAS';
+        if (isFree || o.paymentStatus === 'GRATIS' || o.isFree) {
+          newPaymentStatus = 'GRATIS';
+        } else if (newAmountPaid >= newPriceTotal) {
+          newPaymentStatus = 'LUNAS';
+        } else if (newAmountPaid > 0) {
+          newPaymentStatus = 'DP';
+        } else {
+          newPaymentStatus = 'BELUM_BAYAR';
+        }
 
         return {
           ...o,
@@ -318,7 +328,8 @@ export default function App() {
           amountPaid: newAmountPaid,
           paymentMethod: paymentMethod || o.paymentMethod,
           paymentStatus: newPaymentStatus,
-          status: newStatus
+          status: newStatus,
+          isFree: isFree || o.isFree || false
         };
       }
       return o;
@@ -369,24 +380,29 @@ export default function App() {
     const roamOrder = orders.find(o => o.id === roomParty.roam);
     const expOrder = orders.find(o => o.id === roomParty.exp);
 
+    const formatStatusBadge = (p) => {
+      if (!p) return '';
+      return p.paymentStatus === 'GRATIS' ? '💖 GRATIS' : p.paymentStatus;
+    };
+
     let text = `👑 *MLBB VIP MABAR & JOKI - UPDATE PARTY 5v5* 👑\n`;
     text += `📅 ${dateStr} • ⏰ ${timeStr} WIB\n\n`;
 
     text += `🎮 *AKUN JOKI YANG SEDANG DIMAINKAN (PILOT):*\n`;
-    text += `🏹 Gold Lane (Dimainin Saya): ${jGold ? `*${jGold.username}* | Sisa: *${jGold.matchesRemaining} Match* [${jGold.paymentStatus}]` : '_[SLOT JOKI KOSONG - BISA MASUK]_'}\n`;
-    text += `⚡ Jungler (Dimainin Teman): ${jJungle ? `*${jJungle.username}* | Sisa: *${jJungle.matchesRemaining} Match* [${jJungle.paymentStatus}]` : '_[SLOT JOKI KOSONG - BISA MASUK]_'}\n\n`;
+    text += `🏹 Gold Lane (Dimainin Saya): ${jGold ? `*${jGold.username}* | Sisa: *${jGold.matchesRemaining} Match* [${formatStatusBadge(jGold)}]` : '_[SLOT JOKI KOSONG - BISA MASUK]_'}\n`;
+    text += `⚡ Jungler (Dimainin Teman): ${jJungle ? `*${jJungle.username}* | Sisa: *${jJungle.matchesRemaining} Match* [${formatStatusBadge(jJungle)}]` : '_[SLOT JOKI KOSONG - BISA MASUK]_'}\n\n`;
 
     text += `🌟 *AKUN VIP MABAR IN-GAME (MAIN SENDIRI):*\n`;
-    text += `🔮 Mid Lane (Myth): ${midOrder ? `*${midOrder.username}* | Sisa: *${midOrder.matchesRemaining} Match* [${midOrder.paymentStatus}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
-    text += `❤️ Roamer (Room): ${roamOrder ? `*${roamOrder.username}* | Sisa: *${roamOrder.matchesRemaining} Match* [${roamOrder.paymentStatus}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
-    text += `🛡️ Exp Lane (Exp): ${expOrder ? `*${expOrder.username}* | Sisa: *${expOrder.matchesRemaining} Match* [${expOrder.paymentStatus}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
+    text += `🔮 Mid Lane (Myth): ${midOrder ? `*${midOrder.username}* | Sisa: *${midOrder.matchesRemaining} Match* [${formatStatusBadge(midOrder)}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
+    text += `❤️ Roamer (Room): ${roamOrder ? `*${roamOrder.username}* | Sisa: *${roamOrder.matchesRemaining} Match* [${formatStatusBadge(roamOrder)}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
+    text += `🛡️ Exp Lane (Exp): ${expOrder ? `*${expOrder.username}* | Sisa: *${expOrder.matchesRemaining} Match* [${formatStatusBadge(expOrder)}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
 
     text += `\n⏳ *ANTREAN MENUNGGU (JOKI & VIP MABAR):*\n`;
     if (waitingOrders.length === 0) {
       text += `_(Antrean kosong, slot siap diisi sekarang!)_\n`;
     } else {
       waitingOrders.forEach((wo, idx) => {
-        text += `${idx + 1}. *${wo.username}* (${wo.orderType === 'JOKI' ? 'Joki ' + wo.role : 'VIP ' + wo.role}) - ${wo.matchesRemaining} Match [${wo.paymentStatus}]\n`;
+        text += `${idx + 1}. *${wo.username}* (${wo.orderType === 'JOKI' ? 'Joki ' + wo.role : 'VIP ' + wo.role}) - ${wo.matchesRemaining} Match [${formatStatusBadge(wo)}]\n`;
       });
     }
 
