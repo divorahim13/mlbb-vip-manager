@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
-import RoomParty from './components/RoomParty';
+import RoomParty, { ROLE_DETAILS, VIP_SLOT_DEFS } from './components/RoomParty';
 import WaitingQueue from './components/WaitingQueue';
 import OrderModal from './components/OrderModal';
 import TopUpModal from './components/TopUpModal';
@@ -10,7 +10,7 @@ import { playSound } from './utils/sound';
 import { formatRupiah } from './utils/pricing';
 import {
   STORAGE_KEYS,
-  INITIAL_HOST,
+  INITIAL_PILOTS,
   INITIAL_ORDERS,
   INITIAL_ROOM,
   INITIAL_MATCH_HISTORY,
@@ -23,7 +23,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('room'); // 'room' | 'finance' | 'history'
   const [orders, setOrders] = useState(() => loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS));
   const [roomParty, setRoomParty] = useState(() => loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM));
-  const [hostInfo, setHostInfo] = useState(() => loadData(STORAGE_KEYS.HOST_INFO, INITIAL_HOST));
+  const [pilotsInfo, setPilotsInfo] = useState(() => loadData(STORAGE_KEYS.PILOTS_INFO, INITIAL_PILOTS));
   const [matchHistory, setMatchHistory] = useState(() => loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY));
 
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
@@ -40,8 +40,8 @@ export default function App() {
   }, [roomParty]);
 
   useEffect(() => {
-    saveData(STORAGE_KEYS.HOST_INFO, hostInfo);
-  }, [hostInfo]);
+    saveData(STORAGE_KEYS.PILOTS_INFO, pilotsInfo);
+  }, [pilotsInfo]);
 
   useEffect(() => {
     saveData(STORAGE_KEYS.MATCH_HISTORY, matchHistory);
@@ -57,7 +57,15 @@ export default function App() {
   // Filter orders by status
   const waitingOrders = orders.filter(o => o.status === 'WAITING');
   const completedOrders = orders.filter(o => o.status === 'COMPLETED');
-  const hasEmptySlot = [1, 2, 3, 4].some(s => !roomParty[s]);
+  const hasEmptySlot = !roomParty.mid || !roomParty.roam || !roomParty.exp;
+
+  // Determine slot key from role
+  const getSlotKeyForRole = (role) => {
+    if (role === 'Mid Lane') return 'mid';
+    if (role === 'Roamer') return 'roam';
+    if (role === 'Exp Lane') return 'exp';
+    return null;
+  };
 
   // Create new order
   const handleSaveOrder = (newOrderData) => {
@@ -75,12 +83,18 @@ export default function App() {
 
     // Direct into room if requested and slot available
     if (newOrderData.directToRoom) {
-      const openSlot = [1, 2, 3, 4].find(s => !roomParty[s]);
-      if (openSlot) {
+      let targetSlot = getSlotKeyForRole(newOrderData.role);
+      if (!targetSlot || updatedRoom[targetSlot]) {
+        // Fallback to any empty VIP slot
+        targetSlot = ['mid', 'roam', 'exp'].find(k => !updatedRoom[k]);
+      }
+
+      if (targetSlot) {
         newOrder.status = 'IN_ROOM';
-        newOrder.roomSlot = openSlot;
-        updatedRoom[openSlot] = newId;
-        showToast(`Pesanan VIP @${newOrder.username} berhasil dibuat & langsung masuk Slot ${openSlot}!`);
+        newOrder.roomSlot = targetSlot;
+        updatedRoom[targetSlot] = newId;
+        const roleLabel = VIP_SLOT_DEFS.find(s => s.key === targetSlot)?.name || targetSlot;
+        showToast(`Pesanan VIP @${newOrder.username} berhasil dibuat & langsung masuk Slot ${roleLabel}!`);
       } else {
         showToast(`Pesanan VIP @${newOrder.username} berhasil ditambahkan ke Antrean!`);
       }
@@ -93,13 +107,13 @@ export default function App() {
     playSound('click');
   };
 
-  // Put player into a specific slot in room
-  const handleFillSlot = (slotNum, orderId) => {
+  // Put player into a specific slot ('mid' | 'roam' | 'exp')
+  const handleFillSlot = (slotKey, orderId) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
 
-    // If slot had an existing order, put old order back to waiting or completed
-    const existingOrderId = roomParty[slotNum];
+    // If slot had an existing order, return it to waiting or completed
+    const existingOrderId = roomParty[slotKey];
     let updatedOrders = orders.map(o => {
       if (o.id === existingOrderId) {
         return {
@@ -112,56 +126,71 @@ export default function App() {
         return {
           ...o,
           status: 'IN_ROOM',
-          roomSlot: slotNum
+          roomSlot: slotKey
         };
       }
       return o;
     });
 
     setOrders(updatedOrders);
-    setRoomParty(prev => ({ ...prev, [slotNum]: orderId }));
+    setRoomParty(prev => ({ ...prev, [slotKey]: orderId }));
     playSound('click');
-    showToast(`@${targetOrder.username} sekarang aktif di Room Slot ${slotNum}!`);
+    const roleLabel = VIP_SLOT_DEFS.find(s => s.key === slotKey)?.name || slotKey;
+    showToast(`@${targetOrder.username} sekarang aktif di Slot VIP ${roleLabel}!`);
   };
 
   // Put next waiting order into next available slot
   const handleFillNextSlot = (orderId) => {
-    const emptySlot = [1, 2, 3, 4].find(s => !roomParty[s]);
-    if (emptySlot) {
-      handleFillSlot(emptySlot, orderId);
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder) return;
+
+    let targetSlot = getSlotKeyForRole(targetOrder.role);
+    if (!targetSlot || roomParty[targetSlot]) {
+      targetSlot = ['mid', 'roam', 'exp'].find(k => !roomParty[k]);
+    }
+
+    if (targetSlot) {
+      handleFillSlot(targetSlot, orderId);
     } else {
-      // Prompt user or replace slot 1
-      handleFillSlot(1, orderId);
+      // If all slots are full, swap into matching role slot or 'mid'
+      const fallback = getSlotKeyForRole(targetOrder.role) || 'mid';
+      handleFillSlot(fallback, orderId);
     }
   };
 
   // Remove player from slot
-  const handleRemoveFromSlot = (slotNum) => {
-    const orderId = roomParty[slotNum];
+  const handleRemoveFromSlot = (slotKey) => {
+    const orderId = roomParty[slotKey];
     if (!orderId) return;
 
     const order = orders.find(o => o.id === orderId);
     const newStatus = order && order.matchesRemaining > 0 ? 'WAITING' : 'COMPLETED';
 
     setOrders(orders.map(o => (o.id === orderId ? { ...o, status: newStatus, roomSlot: null } : o)));
-    setRoomParty(prev => ({ ...prev, [slotNum]: null }));
+    setRoomParty(prev => ({ ...prev, [slotKey]: null }));
     playSound('click');
-    showToast(order ? `@${order.username} dikeluarkan dari Slot ${slotNum} ke ${newStatus === 'WAITING' ? 'Antrean' : 'Selesai'}.` : 'Slot dikosongkan.');
+    const roleLabel = VIP_SLOT_DEFS.find(s => s.key === slotKey)?.name || slotKey;
+    showToast(order ? `@${order.username} dikeluarkan dari Slot ${roleLabel} ke ${newStatus === 'WAITING' ? 'Antrean' : 'Selesai'}.` : 'Slot dikosongkan.');
   };
 
-  // Auto rotate: replace expired player with #1 in waiting queue
-  const handleAutoRotate = (slotNum) => {
+  // Auto rotate: replace expired player with matching role waiting player or #1 in queue
+  const handleAutoRotate = (slotKey) => {
     if (waitingOrders.length === 0) {
       showToast('Tidak ada antrean tunggu untuk rotasi.', 'error');
       return;
     }
-    const nextPlayer = waitingOrders[0];
-    handleFillSlot(slotNum, nextPlayer.id);
+
+    const slotDef = VIP_SLOT_DEFS.find(s => s.key === slotKey);
+    const targetRole = slotDef?.role;
+
+    // Find best match in queue
+    const bestMatch = waitingOrders.find(o => o.role === targetRole || o.role === 'Any') || waitingOrders[0];
+    handleFillSlot(slotKey, bestMatch.id);
   };
 
   // Finish 1 match (Win or Lose)
   const handleFinishMatch = (result) => {
-    const activeSlotPlayerIds = Object.values(roomParty).filter(Boolean);
+    const activeSlotPlayerIds = [roomParty.mid, roomParty.roam, roomParty.exp].filter(Boolean);
     if (activeSlotPlayerIds.length === 0) {
       showToast('Tidak ada pemain VIP di dalam room.', 'error');
       return;
@@ -193,8 +222,8 @@ export default function App() {
       matchNumber: matchHistory.length + 1,
       result, // 'WIN' | 'LOSE'
       timestamp: new Date().toISOString(),
-      participants,
-      mvp: result === 'WIN' ? `${hostInfo.name} / ${participants[0] || 'Team'}` : null,
+      participants: [`Pilot Gold: ${pilotsInfo.gold.name}`, `Pilot Jungle: ${pilotsInfo.jungler.name}`, ...participants],
+      mvp: result === 'WIN' ? `${pilotsInfo.gold.name} (Gold) / ${pilotsInfo.jungler.name} (Jungle)` : null,
       durationMinutes: 15
     };
 
@@ -204,7 +233,7 @@ export default function App() {
     // Audio feedback
     if (result === 'WIN') {
       playSound('victory');
-      showToast(`🏆 VICTORY! Kuota -1 untuk semua player di Room.`);
+      showToast(`🏆 VICTORY! Kuota -1 untuk semua VIP di Room.`);
     } else {
       playSound('defeat');
       showToast(`💀 DEFEAT! Kuota -1 dicatat.`);
@@ -213,7 +242,7 @@ export default function App() {
     if (expiredList.length > 0) {
       setTimeout(() => {
         playSound('alert');
-        showToast(`🚨 Perhatian: Kuota mabar ${expiredList.join(', ')} telah HABIS!`);
+        showToast(`🚨 Perhatian: Kuota mabar VIP ${expiredList.join(', ')} telah HABIS!`);
       }, 1200);
     }
   };
@@ -228,7 +257,6 @@ export default function App() {
     newWaiting[index] = newWaiting[targetIdx];
     newWaiting[targetIdx] = temp;
 
-    // Rebuild full orders maintaining new waiting order
     const nonWaiting = orders.filter(o => o.status !== 'WAITING');
     setOrders([...newWaiting, ...nonWaiting]);
     playSound('click');
@@ -282,11 +310,10 @@ export default function App() {
   const handleDeleteOrder = (orderId) => {
     if (!window.confirm('Yakin ingin menghapus data pemain ini?')) return;
 
-    // If it was in room, clear that slot
     const updatedRoom = { ...roomParty };
-    [1, 2, 3, 4].forEach(s => {
-      if (updatedRoom[s] === orderId) {
-        updatedRoom[s] = null;
+    ['mid', 'roam', 'exp'].forEach(k => {
+      if (updatedRoom[k] === orderId) {
+        updatedRoom[k] = null;
       }
     });
 
@@ -299,7 +326,8 @@ export default function App() {
   const handleResetData = () => {
     if (window.confirm('Bersihkan seluruh data (order, antrean, dan riwayat match)?')) {
       setOrders([]);
-      setRoomParty({ 1: null, 2: null, 3: null, 4: null });
+      setRoomParty({ mid: null, roam: null, exp: null });
+      setPilotsInfo(INITIAL_PILOTS);
       setMatchHistory([]);
       showToast('Seluruh data berhasil dibersihkan.');
     }
@@ -315,25 +343,25 @@ export default function App() {
     });
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    const midOrder = orders.find(o => o.id === roomParty.mid);
+    const roamOrder = orders.find(o => o.id === roomParty.roam);
+    const expOrder = orders.find(o => o.id === roomParty.exp);
+
     let text = `👑 *MLBB VIP MABAR - UPDATE PARTY & ANTREAN* 👑\n`;
     text += `📅 ${dateStr} • ⏰ ${timeStr} WIB\n\n`;
 
-    text += `🎮 *IN-GAME PARTY (ROOM 5v5):*\n`;
-    text += `👑 *Host:* ${hostInfo.name} (${hostInfo.role})\n`;
+    text += `🎮 *TIM PILOT CARRY (MAININ AKUN):*\n`;
+    text += `🏹 *Gold Lane:* ${pilotsInfo.gold.name} (${pilotsInfo.gold.hero})\n`;
+    text += `⚡ *Jungler:* ${pilotsInfo.jungler.name} (${pilotsInfo.jungler.hero})\n\n`;
 
-    [1, 2, 3, 4].forEach(slot => {
-      const orderId = roomParty[slot];
-      const ord = orders.find(o => o.id === orderId);
-      if (ord) {
-        text += `🔹 Slot ${slot}: *${ord.username}* (${ord.role}) | Sisa: *${ord.matchesRemaining} Match* [${ord.paymentStatus}]\n`;
-      } else {
-        text += `🔹 Slot ${slot}: _[KOSONG - BISA MASUK]_\n`;
-      }
-    });
+    text += `🌟 *SLOT VIP CLIENT AKTIF (3 SLOT):*\n`;
+    text += `🔮 *Mid Lane (Myth):* ${midOrder ? `*${midOrder.username}* | Sisa: *${midOrder.matchesRemaining} Match* [${midOrder.paymentStatus}]` : '_[KOSONG - BISA MASUK]_'}\n`;
+    text += `❤️ *Roamer (Room):* ${roamOrder ? `*${roamOrder.username}* | Sisa: *${roamOrder.matchesRemaining} Match* [${roamOrder.paymentStatus}]` : '_[KOSONG - BISA MASUK]_'}\n`;
+    text += `🛡️ *Exp Lane (Exp):* ${expOrder ? `*${expOrder.username}* | Sisa: *${expOrder.matchesRemaining} Match* [${expOrder.paymentStatus}]` : '_[KOSONG - BISA MASUK]_'}\n`;
 
-    text += `\n⏳ *ANTREAN MENUNGGU (NEXT IN LINE):*\n`;
+    text += `\n⏳ *ANTREAN MENUNGGU (MID / ROAM / EXP):*\n`;
     if (waitingOrders.length === 0) {
-      text += `_(Antrean kosong, slot siap diisi langsung!)_\n`;
+      text += `_(Antrean kosong, slot VIP siap diisi!)_\n`;
     } else {
       waitingOrders.forEach((wo, idx) => {
         text += `${idx + 1}. *${wo.username}* (${wo.role}) - ${wo.matchesRemaining} Match [${wo.paymentStatus}]\n`;
@@ -346,7 +374,7 @@ export default function App() {
     text += `• 5 Match: Rp 30.000 ⭐ _(Hemat Rp 5.000, cuma 6k/match!)_\n`;
     text += `• 10 Match: Rp 60.000 👑 _(Hemat Rp 10.000!)_\n`;
     text += `*(Berlaku kelipatan 5 match = 30.000)*\n\n`;
-    text += `📲 Mau booking slot atau antrean? Langsung chat Admin ya! Gas Winrate Immortal! 🔥`;
+    text += `📲 Mau booking slot VIP Myth, Room, atau Exp? Langsung chat Admin ya! Gas Winrate Immortal! 🔥`;
 
     navigator.clipboard.writeText(text).then(() => {
       playSound('click');
@@ -379,7 +407,7 @@ export default function App() {
     const backupData = {
       orders,
       roomParty,
-      hostInfo,
+      pilotsInfo,
       matchHistory,
       exportedAt: new Date().toISOString()
     };
@@ -405,7 +433,7 @@ export default function App() {
         const data = JSON.parse(event.target.result);
         if (data.orders) setOrders(data.orders);
         if (data.roomParty) setRoomParty(data.roomParty);
-        if (data.hostInfo) setHostInfo(data.hostInfo);
+        if (data.pilotsInfo) setPilotsInfo(data.pilotsInfo);
         if (data.matchHistory) setMatchHistory(data.matchHistory);
         showToast('Data berhasil direstore dari backup!');
       } catch {
@@ -449,12 +477,12 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'room' && (
           <div className="space-y-6">
-            {/* Live Room 5v5 */}
+            {/* Live Room: 2 Pilots (Gold & Jungle) + 3 VIPs (Mid, Roam, Exp) */}
             <RoomParty
               roomParty={roomParty}
               orders={orders}
-              hostInfo={hostInfo}
-              onUpdateHost={setHostInfo}
+              pilotsInfo={pilotsInfo}
+              onUpdatePilots={setPilotsInfo}
               onFillSlot={handleFillSlot}
               onRemoveFromSlot={handleRemoveFromSlot}
               onFinishMatch={handleFinishMatch}
@@ -522,7 +550,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500">
-        <p>MLBB VIP Mabar Pro • Khusus Manajemen Party & Keuangan Mobile Legends • Siap Pakai & Super Ringan</p>
+        <p>MLBB VIP Mabar Pro • 2 Pilot (Gold & Jungle) + 3 VIP (Mid, Roam, Exp) • Siap Pakai & Super Ringan</p>
       </footer>
     </div>
   );

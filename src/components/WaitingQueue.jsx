@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Zap, Plus, CheckCircle, ShieldAlert } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
-import { ROLE_ICONS } from './RoomParty';
+import { ROLE_DETAILS } from './RoomParty';
 
 export default function WaitingQueue({
   waitingOrders,
@@ -16,8 +16,15 @@ export default function WaitingQueue({
 }) {
   const [activeTab, setActiveTab] = useState('waiting'); // 'waiting' or 'completed'
 
-  // Find if there is an empty slot in room
-  const emptySlot = [1, 2, 3, 4].find(s => !roomParty[s]);
+  // Available empty slots among mid, roam, exp
+  const emptySlots = ['mid', 'roam', 'exp'].filter(k => !roomParty[k]);
+
+  const getSlotLabel = (role) => {
+    if (role === 'Mid Lane') return !roomParty.mid ? 'Slot Mid' : null;
+    if (role === 'Roamer') return !roomParty.roam ? 'Slot Roam' : null;
+    if (role === 'Exp Lane') return !roomParty.exp ? 'Slot Exp' : null;
+    return emptySlots.length > 0 ? `Slot ${emptySlots[0].toUpperCase()}` : null;
+  };
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl">
@@ -30,10 +37,10 @@ export default function WaitingQueue({
             </span>
           </div>
           <h3 className="text-lg font-black text-white mt-0.5">
-            Daftar Antrean & Giliran Masuk Room
+            Daftar Antrean VIP (Mid, Roam, Exp)
           </h3>
           <p className="text-xs text-slate-400">
-            Sistem antrean berurutan (FIFO). Anda dapat memindahkan prioritas antrean kapan saja.
+            Urutan antrean berurutan (FIFO). Pilot Gold Lane & Jungler selalu aktif di room game.
           </p>
         </div>
 
@@ -80,9 +87,9 @@ export default function WaitingQueue({
               <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
                 <Clock className="w-6 h-6 text-slate-400" />
               </div>
-              <h4 className="text-sm font-bold text-white">Tidak ada antrean aktif</h4>
+              <h4 className="text-sm font-bold text-white">Tidak ada antrean VIP aktif</h4>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Semua pemain sudah berada di dalam room atau belum ada pendaftaran baru.
+                Semua pemain sudah berada di dalam room atau belum ada pendaftaran baru untuk Mid, Roam, atau Exp.
               </p>
               <button
                 onClick={onOpenNewOrder}
@@ -97,6 +104,8 @@ export default function WaitingQueue({
               {waitingOrders.map((order, index) => {
                 const isFirst = index === 0;
                 const isLast = index === waitingOrders.length - 1;
+                const roleMeta = ROLE_DETAILS[order.role] || { label: order.role, icon: '🎮' };
+                const targetSlotLabel = getSlotLabel(order.role);
 
                 return (
                   <div
@@ -123,7 +132,7 @@ export default function WaitingQueue({
 
                         {/* Role Icon */}
                         <span className="text-2xl shrink-0" title={order.role}>
-                          {ROLE_ICONS[order.role] || '🎮'}
+                          {roleMeta.icon}
                         </span>
 
                         <div className="min-w-0">
@@ -136,8 +145,8 @@ export default function WaitingQueue({
                                 SIAP MASUK ROOM
                               </span>
                             )}
-                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-semibold">
-                              {order.role}
+                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-amber-300 font-semibold border border-slate-700">
+                              {roleMeta.label}
                             </span>
                           </div>
 
@@ -212,13 +221,13 @@ export default function WaitingQueue({
                         <button
                           onClick={() => onFillNextSlot(order.id)}
                           className={`flex items-center gap-1.5 font-black text-xs px-3 py-2 rounded-lg transition-all ${
-                            emptySlot
+                            targetSlotLabel || emptySlots.length > 0
                               ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-glow-gold'
                               : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                           }`}
                         >
                           <UserCheck className="w-3.5 h-3.5" />
-                          <span>{emptySlot ? `Masuk Slot ${emptySlot}` : 'Gantikan Slot'}</span>
+                          <span>{targetSlotLabel ? `Masuk ${targetSlotLabel}` : (emptySlots.length > 0 ? 'Masuk Room' : 'Gantikan Slot')}</span>
                         </button>
 
                         {/* If DP or Belum Bayar, Quick Pelunasan button */}

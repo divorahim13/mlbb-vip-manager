@@ -133,7 +133,7 @@ export default function Header({
           <Swords className="w-4 h-4" />
           <span>🎮 Live Room & Antrean</span>
           <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-800 text-amber-300 font-extrabold">
-            {inRoomCount}/4 Room • {waitingCount} Antre
+            {inRoomCount}/3 VIP • {waitingCount} Antre
           </span>
         </button>
 

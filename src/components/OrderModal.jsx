@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { calculatePricing, formatRupiah, RATE_SINGLE, RATE_BUNDLE_5, BUNDLE_SIZE } from '../utils/pricing';
-import { Crown, Sparkles, Check, DollarSign, Smartphone, User, Swords, ShieldCheck, Tag } from 'lucide-react';
-import { ROLE_ICONS } from './RoomParty';
+import { Crown, Sparkles, Check, DollarSign, Smartphone, User, Swords, ShieldCheck, Tag, Info } from 'lucide-react';
+import { ROLE_DETAILS } from './RoomParty';
 
 const PAYMENT_METHODS = [
   'DANA',
@@ -16,13 +16,19 @@ const PAYMENT_METHODS = [
   'Cash / Tunai'
 ];
 
-const ROLES = ['Gold Lane', 'Exp Lane', 'Mid Lane', 'Roamer', 'Jungler', 'Any'];
+// VIP Roles ONLY: Mid Lane (Myth), Roamer (Room), Exp Lane (Exp), or Any
+export const VIP_ROLES = [
+  { value: 'Mid Lane', label: 'Mid Lane (Myth)', icon: '🔮' },
+  { value: 'Roamer', label: 'Roamer (Room)', icon: '❤️' },
+  { value: 'Exp Lane', label: 'Exp Lane (Exp)', icon: '🛡️' },
+  { value: 'Any', label: 'Bebas (Mid / Roam / Exp)', icon: '🎮' }
+];
 
 export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
   const [username, setUsername] = useState('');
   const [userId, setUserId] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('Gold Lane');
+  const [role, setRole] = useState('Mid Lane');
   const [matches, setMatches] = useState(5);
   const [paymentMethod, setPaymentMethod] = useState('DANA');
   const [amountPaid, setAmountPaid] = useState('');
@@ -90,7 +96,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
             </div>
             <div>
               <h3 className="text-lg font-black text-white">Order Mabar VIP Baru</h3>
-              <p className="text-[11px] text-slate-400">Pencatatan data transfer & kalkulator paket match</p>
+              <p className="text-[11px] text-slate-400">Pencatatan data transfer & paket match VIP</p>
             </div>
           </div>
           <button
@@ -99,6 +105,14 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
           >
             ✕
           </button>
+        </div>
+
+        {/* Info Banner: Role Pilot vs VIP */}
+        <div className="mt-3.5 bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-xs flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+          <div className="text-slate-300 text-[11px]">
+            <span className="font-bold text-blue-300">Struktur Party Mabar VIP:</span> Role <strong>Gold Lane 🏹 & Jungler ⚡</strong> dimainkan tim Pilot (mainin akun). Slot berbayar VIP hanya untuk <strong className="text-amber-300">Mid Lane (Myth)</strong>, <strong className="text-amber-300">Roamer (Room)</strong>, dan <strong className="text-amber-300">Exp Lane (Exp)</strong>.
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
@@ -149,16 +163,16 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Role Hero Favorit
+                  Pilihan Role VIP <span className="text-amber-400">*</span>
                 </label>
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
                 >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {ROLE_ICONS[r]} {r}
+                  {VIP_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.icon} {r.label}
                     </option>
                   ))}
                 </select>
@@ -238,7 +252,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
               </button>
             </div>
 
-            {/* Custom Match Slider / Input */}
+            {/* Custom Match Input */}
             <div className="flex items-center gap-3 pt-1">
               <span className="text-xs text-slate-400 whitespace-nowrap">Atau Jumlah Custom:</span>
               <input
@@ -350,7 +364,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
                   className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700"
                 />
                 <span className="text-xs text-slate-300">
-                  ⚡ <strong>Langsung masukkan ke Slot Room kosong</strong> (Lewati antrean)
+                  ⚡ <strong>Langsung masukkan ke Slot VIP kosong</strong> (Lewati antrean)
                 </span>
               </label>
             )}
