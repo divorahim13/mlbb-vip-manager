@@ -347,7 +347,7 @@ export default function RoomParty({
                       className="w-full bg-slate-900 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/30 text-xs font-bold py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>+ Isi Slot VIP</span>
+                      <span>Isi Slot VIP</span>
                     </button>
                   </>
                 )}
