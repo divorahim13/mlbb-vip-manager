@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crown, Swords, DollarSign, Users, Flame, RefreshCw, PlusCircle, Share2, Trash2 } from 'lucide-react';
+import { Crown, Swords, DollarSign, Users, Flame, RefreshCw, PlusCircle, Share2, Trash2, Cloud, CloudOff } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
 
 export default function Header({
@@ -10,11 +10,14 @@ export default function Header({
   matchHistory,
   onOpenNewOrder,
   onResetData,
-  onShareWhatsApp
+  onShareWhatsApp,
+  cloudStatus = 'ONLINE', // 'ONLINE' | 'SYNCING' | 'OFFLINE'
+  isSyncing = false,
+  onForceSync
 }) {
   // Financial calculation
   const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.amountPaid) || 0), 0);
-  const totalDue = orders.reduce((sum, o) => sum + Math.max(0, (o.priceTotal || 0) - (o.amountPaid || 0)), 0);
+  const totalDue = orders.reduce((sum, o) => sum + (o.paymentStatus === 'GRATIS' ? 0 : Math.max(0, (o.priceTotal || 0) - (o.amountPaid || 0))), 0);
 
   // Queue counts
   const waitingCount = orders.filter(o => o.status === 'WAITING').length;
@@ -47,8 +50,43 @@ export default function Header({
           </div>
         </div>
 
-        {/* Quick Stats Ticker */}
+        {/* Quick Stats Ticker & Cloud Sync Badge */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Cloud Database Status Badge */}
+          {cloudStatus === 'ONLINE' && (
+            <button
+              onClick={onForceSync}
+              title="Cloud Database Aktif & Tersinkron. Klik untuk cek pembaruan sekarang."
+              className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm"
+            >
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <Cloud className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Cloud DB:</span>
+              <span className="font-black">Online</span>
+              <RefreshCw className={`w-3 h-3 text-emerald-400/80 ${isSyncing ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+
+          {cloudStatus === 'SYNCING' && (
+            <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-2.5 py-1.5 rounded-lg text-xs font-bold animate-pulse">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+              <span className="hidden sm:inline">Menyimpan ke Cloud...</span>
+              <span className="sm:hidden">Sinkron...</span>
+            </div>
+          )}
+
+          {cloudStatus === 'OFFLINE' && (
+            <button
+              onClick={onForceSync}
+              title="Mode Offline (Cache Lokal). Klik untuk mencoba menghubungkan kembali ke Cloud Database."
+              className="flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all"
+            >
+              <CloudOff className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Offline (Cache Lokal)</span>
+              <RefreshCw className="w-3 h-3" />
+            </button>
+          )}
+
           {/* Omzet */}
           <div className="bg-slate-900/80 border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">

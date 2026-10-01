@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import RoomParty, { ROLE_DETAILS, ALL_5_SLOTS } from './components/RoomParty';
 import WaitingQueue from './components/WaitingQueue';
@@ -8,6 +8,7 @@ import FinancialView from './components/FinancialView';
 import MatchHistoryView from './components/MatchHistoryView';
 import { playSound } from './utils/sound';
 import { formatRupiah } from './utils/pricing';
+import { fetchCloudData, saveCloudData } from './utils/cloudSync';
 import {
   STORAGE_KEYS,
   INITIAL_ORDERS,
@@ -24,28 +25,227 @@ export default function App() {
   const [roomParty, setRoomParty] = useState(() => loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM));
   const [matchHistory, setMatchHistory] = useState(() => loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY));
 
+  // Cloud Database Sync States
+  const [cloudStatus, setCloudStatus] = useState('ONLINE'); // 'ONLINE' | 'SYNCING' | 'OFFLINE'
+  const [isSyncing, setIsSyncing] = useState(false);
+  const isApplyingRemoteRef = useRef(false);
+  const lastSyncedAtRef = useRef(null);
+  const saveTimeoutRef = useRef(null);
+  const isInitialLoadRef = useRef(true);
+
   const [orderModalConfig, setOrderModalConfig] = useState({ isOpen: false, defaultType: 'VIP_MABAR' });
   const [topUpOrder, setTopUpOrder] = useState(null);
   const [toast, setToast] = useState(null);
-
-  // Sync with LocalStorage
-  useEffect(() => {
-    saveData(STORAGE_KEYS.ORDERS, orders);
-  }, [orders]);
-
-  useEffect(() => {
-    saveData(STORAGE_KEYS.ROOM_PARTY, roomParty);
-  }, [roomParty]);
-
-  useEffect(() => {
-    saveData(STORAGE_KEYS.MATCH_HISTORY, matchHistory);
-  }, [matchHistory]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
     }, 3500);
+  };
+
+  // Initial Sync from Cloud Database on mount
+  useEffect(() => {
+    let isMounted = true;
+
+    async function initialSync() {
+      setIsSyncing(true);
+      try {
+        const cloud = await fetchCloudData();
+        if (!isMounted) return;
+
+        if (cloud && cloud.success && cloud.exists && cloud.data) {
+          const cloudOrders = Array.isArray(cloud.data.orders) ? cloud.data.orders : [];
+          const cloudRoom = cloud.data.roomParty || INITIAL_ROOM;
+          const cloudHistory = Array.isArray(cloud.data.matchHistory) ? cloud.data.matchHistory : [];
+
+          isApplyingRemoteRef.current = true;
+          setOrders(cloudOrders);
+          setRoomParty(cloudRoom);
+          setMatchHistory(cloudHistory);
+          saveData(STORAGE_KEYS.ORDERS, cloudOrders);
+          saveData(STORAGE_KEYS.ROOM_PARTY, cloudRoom);
+          saveData(STORAGE_KEYS.MATCH_HISTORY, cloudHistory);
+          lastSyncedAtRef.current = cloud.updatedAt || cloud.data.updatedAt;
+          setCloudStatus('ONLINE');
+
+          setTimeout(() => {
+            isApplyingRemoteRef.current = false;
+          }, 500);
+        } else if (cloud && cloud.success && !cloud.exists) {
+          // Cloud DB is brand new, if local has data (e.g. from user session), push local to cloud
+          const currentOrders = loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS);
+          const currentRoom = loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM);
+          const currentHistory = loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY);
+
+          if (currentOrders.length > 0) {
+            setCloudStatus('SYNCING');
+            const saveRes = await saveCloudData({
+              orders: currentOrders,
+              roomParty: currentRoom,
+              matchHistory: currentHistory
+            });
+            if (saveRes && saveRes.success) {
+              lastSyncedAtRef.current = saveRes.updatedAt;
+              setCloudStatus('ONLINE');
+            } else {
+              setCloudStatus('ONLINE');
+            }
+          } else {
+            setCloudStatus('ONLINE');
+          }
+        } else {
+          setCloudStatus('OFFLINE');
+        }
+      } catch (err) {
+        console.error('Initial sync error:', err);
+        setCloudStatus('OFFLINE');
+      } finally {
+        if (isMounted) {
+          setIsSyncing(false);
+          isInitialLoadRef.current = false;
+        }
+      }
+    }
+
+    initialSync();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Auto-sync to Cloud DB whenever orders, roomParty, or matchHistory change
+  useEffect(() => {
+    // Save to LocalStorage immediately
+    saveData(STORAGE_KEYS.ORDERS, orders);
+    saveData(STORAGE_KEYS.ROOM_PARTY, roomParty);
+    saveData(STORAGE_KEYS.MATCH_HISTORY, matchHistory);
+
+    // Skip cloud save if currently applying update from remote or during initial mount
+    if (isApplyingRemoteRef.current || isInitialLoadRef.current) {
+      return;
+    }
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      setCloudStatus('SYNCING');
+      const res = await saveCloudData({
+        orders,
+        roomParty,
+        matchHistory
+      });
+
+      if (res && res.success) {
+        lastSyncedAtRef.current = res.updatedAt;
+        setCloudStatus('ONLINE');
+      } else {
+        setCloudStatus('OFFLINE');
+      }
+    }, 600);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [orders, roomParty, matchHistory]);
+
+  // Realtime Polling & Tab Focus Sync across multiple devices
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function checkRemoteUpdates() {
+      // Don't poll while user has a pending local save
+      if (cloudStatus === 'SYNCING' || isApplyingRemoteRef.current) {
+        return;
+      }
+
+      const res = await fetchCloudData();
+      if (isCancelled || !res || !res.success || !res.exists || !res.data) {
+        return;
+      }
+
+      const remoteTime = res.updatedAt || res.data.updatedAt;
+      if (remoteTime && remoteTime !== lastSyncedAtRef.current) {
+        isApplyingRemoteRef.current = true;
+        setOrders(res.data.orders || []);
+        setRoomParty(res.data.roomParty || INITIAL_ROOM);
+        setMatchHistory(res.data.matchHistory || []);
+        saveData(STORAGE_KEYS.ORDERS, res.data.orders || []);
+        saveData(STORAGE_KEYS.ROOM_PARTY, res.data.roomParty || INITIAL_ROOM);
+        saveData(STORAGE_KEYS.MATCH_HISTORY, res.data.matchHistory || []);
+        lastSyncedAtRef.current = remoteTime;
+        setCloudStatus('ONLINE');
+
+        setTimeout(() => {
+          isApplyingRemoteRef.current = false;
+        }, 500);
+      }
+    }
+
+    const intervalId = setInterval(checkRemoteUpdates, 7000);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        checkRemoteUpdates();
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [cloudStatus]);
+
+  // Force manual sync
+  const handleForceSync = async () => {
+    setIsSyncing(true);
+    setCloudStatus('SYNCING');
+    playSound('click');
+
+    try {
+      const res = await fetchCloudData();
+      if (res && res.success && res.exists && res.data) {
+        isApplyingRemoteRef.current = true;
+        setOrders(res.data.orders || []);
+        setRoomParty(res.data.roomParty || INITIAL_ROOM);
+        setMatchHistory(res.data.matchHistory || []);
+        saveData(STORAGE_KEYS.ORDERS, res.data.orders || []);
+        saveData(STORAGE_KEYS.ROOM_PARTY, res.data.roomParty || INITIAL_ROOM);
+        saveData(STORAGE_KEYS.MATCH_HISTORY, res.data.matchHistory || []);
+        lastSyncedAtRef.current = res.updatedAt || res.data.updatedAt;
+        setCloudStatus('ONLINE');
+        showToast('☁️ Data berhasil disinkronkan dari Cloud Database!');
+        setTimeout(() => {
+          isApplyingRemoteRef.current = false;
+        }, 500);
+      } else if (res && res.success && !res.exists) {
+        // Push local to cloud
+        const saveRes = await saveCloudData({ orders, roomParty, matchHistory });
+        if (saveRes && saveRes.success) {
+          lastSyncedAtRef.current = saveRes.updatedAt;
+          setCloudStatus('ONLINE');
+          showToast('☁️ Data lokal berhasil diunggah ke Cloud Database!');
+        }
+      } else {
+        setCloudStatus('OFFLINE');
+        showToast('Tidak dapat terhubung ke Cloud DB. Mode offline aktif.', 'error');
+      }
+    } catch {
+      setCloudStatus('OFFLINE');
+      showToast('Gagal sinkronisasi cloud.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Filter orders by status
@@ -190,7 +390,6 @@ export default function App() {
     const slotDef = ALL_5_SLOTS.find(s => s.key === slotKey);
     const targetRole = slotDef?.role;
 
-    // Find best match in queue
     const bestMatch = waitingOrders.find(
       o => o.role === targetRole || (o.orderType === slotDef?.category && o.role === 'Any')
     ) || (slotDef?.category === 'JOKI' ? waitingOrders.find(o => o.orderType === 'JOKI') : waitingOrders[0]);
@@ -202,7 +401,7 @@ export default function App() {
     }
   };
 
-  // Finish 1 match (Win or Lose) - cuts quota for ALL active accounts in room!
+  // Finish 1 match (Win or Lose) - cuts quota for ALL active accounts in room
   const handleFinishMatch = (result) => {
     const activeSlotPlayerIds = [
       roomParty.jokiGold,
@@ -220,7 +419,6 @@ export default function App() {
     const participants = [];
     const expiredList = [];
 
-    // Decrement matches remaining for all active room players
     const updatedOrders = orders.map(ord => {
       if (activeSlotPlayerIds.includes(ord.id)) {
         participants.push(`@${ord.username} (${ord.orderType === 'JOKI' ? 'Joki ' + ord.role : 'VIP ' + ord.role})`);
@@ -237,7 +435,6 @@ export default function App() {
       return ord;
     });
 
-    // Record in match history
     const newMatch = {
       id: `match-${Date.now()}`,
       matchNumber: matchHistory.length + 1,
@@ -251,7 +448,6 @@ export default function App() {
     setOrders(updatedOrders);
     setMatchHistory([newMatch, ...matchHistory]);
 
-    // Audio feedback
     if (result === 'WIN') {
       playSound('victory');
       showToast(`🏆 VICTORY! Kuota -1 untuk semua akun customer (Joki & VIP) di Room.`);
@@ -355,12 +551,24 @@ export default function App() {
   };
 
   // Reset all data
-  const handleResetData = () => {
-    if (window.confirm('Bersihkan seluruh data order, antrean, dan riwayat?')) {
-      setOrders([]);
-      setRoomParty({ jokiGold: null, jokiJungle: null, mid: null, roam: null, exp: null });
-      setMatchHistory([]);
-      showToast('Seluruh data berhasil dibersihkan.');
+  const handleResetData = async () => {
+    if (window.confirm('Bersihkan seluruh data order, antrean, dan riwayat di Cloud & Lokal?')) {
+      const emptyOrders = [];
+      const emptyRoom = { jokiGold: null, jokiJungle: null, mid: null, roam: null, exp: null };
+      const emptyHistory = [];
+
+      setOrders(emptyOrders);
+      setRoomParty(emptyRoom);
+      setMatchHistory(emptyHistory);
+
+      setCloudStatus('SYNCING');
+      await saveCloudData({
+        orders: emptyOrders,
+        roomParty: emptyRoom,
+        matchHistory: emptyHistory
+      });
+      setCloudStatus('ONLINE');
+      showToast('Seluruh data di Cloud Database berhasil dibersihkan.');
     }
   };
 
@@ -465,13 +673,22 @@ export default function App() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target.result);
         if (data.orders) setOrders(data.orders);
         if (data.roomParty) setRoomParty(data.roomParty);
         if (data.matchHistory) setMatchHistory(data.matchHistory);
         showToast('Data berhasil direstore dari backup!');
+
+        // Immediately sync restored data to cloud
+        setCloudStatus('SYNCING');
+        await saveCloudData({
+          orders: data.orders || orders,
+          roomParty: data.roomParty || roomParty,
+          matchHistory: data.matchHistory || matchHistory
+        });
+        setCloudStatus('ONLINE');
       } catch {
         showToast('Format file JSON tidak valid.', 'error');
       }
@@ -497,7 +714,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header with Cloud DB Status */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -507,6 +724,9 @@ export default function App() {
         onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
         onResetData={handleResetData}
         onShareWhatsApp={handleShareWhatsApp}
+        cloudStatus={cloudStatus}
+        isSyncing={isSyncing}
+        onForceSync={handleForceSync}
       />
 
       {/* Main Container */}
@@ -585,7 +805,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500">
-        <p>MLBB VIP & Joki Mabar Pro • 2 Akun Joki (Gold & Jungle) + 3 Akun VIP Mabar (Mid, Roam, Exp) • Siap Pakai & Super Ringan</p>
+        <p>MLBB VIP & Joki Mabar Pro • Cloud Database Sync Online • Siap Diakses dari Semua Perangkat (HP / Laptop)</p>
       </footer>
     </div>
   );
