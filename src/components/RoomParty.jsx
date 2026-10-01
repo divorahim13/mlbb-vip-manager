@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Crown, Shield, User, UserPlus, Play, CheckCircle2, XCircle, ArrowRightLeft, Sparkles, AlertCircle, Copy, Check } from 'lucide-react';
+import { Crown, Shield, User, UserPlus, Play, CheckCircle2, XCircle, ArrowRightLeft, Sparkles, AlertCircle, Copy, Check, Plus } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
 
 export const ROLE_ICONS = {
@@ -21,9 +21,9 @@ export default function RoomParty({
   onFinishMatch,
   onTopUpOrder,
   onAutoRotate,
-  waitingOrders
+  waitingOrders,
+  onOpenNewOrder
 }) {
-  const [copied, setCopied] = useState(false);
   const [editingHost, setEditingHost] = useState(false);
   const [hostForm, setHostForm] = useState(hostInfo);
   const [slotPicker, setSlotPicker] = useState(null); // slot number currently picking from queue
@@ -97,14 +97,16 @@ export default function RoomParty({
                 <Crown className="w-3.5 h-3.5 fill-current" /> ROOM PARTY 5v5
               </span>
               <span className="text-xs font-semibold text-slate-400">
-                Kapasitas VIP: <strong className="text-white">{occupiedCount} / 4 Slot</strong>
+                Kapasitas Terisi: <strong className="text-white">{occupiedCount} / 4 Slot</strong>
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white mt-1 tracking-tight">
               Party Mabar VIP Aktif
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Klik Selesaikan Match setelah game in-game MLBB berakhir untuk memotong kuota dan rekap hasil.
+              {occupiedCount > 0
+                ? 'Klik tombol selesai match setelah game selesai untuk memotong kuota pemain secara otomatis.'
+                : 'Belum ada pemain di dalam room. Silakan isi slot dari antrean atau buat order baru.'}
             </p>
           </div>
 
@@ -113,7 +115,7 @@ export default function RoomParty({
             <button
               onClick={() => onFinishMatch('WIN')}
               disabled={occupiedCount === 0}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-glow-emerald transition-all transform active:scale-95"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-30 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-glow-emerald transition-all transform active:scale-95"
             >
               <CheckCircle2 className="w-4 h-4" />
               <span>Selesai 1 Match (VICTORY 🏆)</span>
@@ -122,7 +124,7 @@ export default function RoomParty({
             <button
               onClick={() => onFinishMatch('LOSE')}
               disabled={occupiedCount === 0}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-rose-700 to-red-600 hover:from-rose-600 hover:to-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all transform active:scale-95"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-rose-700 to-red-600 hover:from-rose-600 hover:to-red-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all transform active:scale-95"
             >
               <XCircle className="w-4 h-4" />
               <span>Selesai 1 Match (DEFEAT 💀)</span>
@@ -306,38 +308,48 @@ export default function RoomParty({
             return (
               <div
                 key={slotNum}
-                className="border-2 border-dashed border-slate-800 hover:border-slate-700 bg-slate-950/30 rounded-xl p-3.5 flex flex-col items-center justify-center text-center min-h-[220px] transition-colors"
+                className="border-2 border-dashed border-slate-800/80 hover:border-slate-700 bg-slate-950/40 rounded-xl p-3.5 flex flex-col items-center justify-center text-center min-h-[220px] transition-colors"
               >
                 <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-2">
-                  <UserPlus className="w-5 h-5" />
+                  <UserPlus className="w-5 h-5 text-slate-400" />
                 </div>
                 <span className="text-[10px] font-black uppercase text-slate-400">
                   SLOT {slotNum} KOSONG
                 </span>
-                <p className="text-[11px] text-slate-400 mt-1 mb-3">
-                  Panggil VIP dari antrean
-                </p>
 
                 {waitingOrders.length > 0 ? (
-                  <button
-                    onClick={() => onFillSlot(slotNum, waitingOrders[0].id)}
-                    className="w-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
-                  >
-                    <span>Masuk #{waitingOrders[0].username}</span>
-                  </button>
+                  <>
+                    <p className="text-[11px] text-slate-400 mt-1 mb-3">
+                      Siap diisi dari antrean
+                    </p>
+                    <button
+                      onClick={() => onFillSlot(slotNum, waitingOrders[0].id)}
+                      className="w-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
+                    >
+                      <span>Masuk #{waitingOrders[0].username}</span>
+                    </button>
+                    {waitingOrders.length > 1 && (
+                      <button
+                        onClick={() => setSlotPicker(slotNum)}
+                        className="text-[10px] text-slate-400 hover:text-white mt-2 underline"
+                      >
+                        Pilih player lain ({waitingOrders.length})
+                      </button>
+                    )}
+                  </>
                 ) : (
-                  <span className="text-[10px] text-slate-400 italic">
-                    Antrean kosong
-                  </span>
-                )}
-
-                {waitingOrders.length > 1 && (
-                  <button
-                    onClick={() => setSlotPicker(slotNum)}
-                    className="text-[10px] text-slate-400 hover:text-white mt-2 underline"
-                  >
-                    Pilih player lain ({waitingOrders.length})
-                  </button>
+                  <>
+                    <p className="text-[11px] text-slate-500 mt-1 mb-3">
+                      Belum ada pemain
+                    </p>
+                    <button
+                      onClick={onOpenNewOrder}
+                      className="w-full bg-slate-900 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/30 text-xs font-bold py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Isi Slot VIP</span>
+                    </button>
+                  </>
                 )}
               </div>
             );

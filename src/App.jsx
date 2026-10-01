@@ -295,14 +295,13 @@ export default function App() {
     showToast('Data berhasil dihapus.');
   };
 
-  // Reset or Load Demo Data
+  // Reset all data
   const handleResetData = () => {
-    if (window.confirm('Reset data ke kondisi awal Demo? Data kustom Anda akan diganti dengan data contoh.')) {
-      setOrders(INITIAL_ORDERS);
-      setRoomParty(INITIAL_ROOM);
-      setHostInfo(INITIAL_HOST);
-      setMatchHistory(INITIAL_MATCH_HISTORY);
-      showToast('Data demo berhasil dimuat!');
+    if (window.confirm('Bersihkan seluruh data (order, antrean, dan riwayat match)?')) {
+      setOrders([]);
+      setRoomParty({ 1: null, 2: null, 3: null, 4: null });
+      setMatchHistory([]);
+      showToast('Seluruh data berhasil dibersihkan.');
     }
   };
 
@@ -462,6 +461,7 @@ export default function App() {
               onTopUpOrder={(order) => setTopUpOrder(order)}
               onAutoRotate={handleAutoRotate}
               waitingOrders={waitingOrders}
+              onOpenNewOrder={() => setIsOrderModalOpen(true)}
             />
 
             {/* Waiting Queue List */}
@@ -488,6 +488,7 @@ export default function App() {
             onExportCSV={handleExportCSV}
             onExportJSON={handleExportJSON}
             onImportJSON={handleImportJSON}
+            onOpenNewOrder={() => setIsOrderModalOpen(true)}
           />
         )}
 

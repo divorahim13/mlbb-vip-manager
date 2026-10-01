@@ -112,7 +112,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: SkyWalker_ML"
+                  placeholder="Masukkan Nickname MLBB"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"

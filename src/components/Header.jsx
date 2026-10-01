@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crown, Swords, DollarSign, Users, Flame, RefreshCw, PlusCircle, Share2 } from 'lucide-react';
+import { Crown, Swords, DollarSign, Users, Flame, RefreshCw, PlusCircle, Share2, Trash2 } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
 
 export default function Header({
@@ -85,7 +85,7 @@ export default function Header({
             <div>
               <div className="text-[10px] uppercase font-bold text-slate-400">Win Rate</div>
               <div className="text-xs sm:text-sm font-black text-blue-400">
-                {winRate}% <span className="text-[10px] text-slate-400 font-normal">({winCount}/{totalMatches})</span>
+                {winRate}% {totalMatches > 0 && <span className="text-[10px] text-slate-400 font-normal">({winCount}/{totalMatches})</span>}
               </div>
             </div>
           </div>
@@ -108,13 +108,15 @@ export default function Header({
             <span className="hidden sm:inline">Salin WA</span>
           </button>
 
-          <button
-            onClick={onResetData}
-            title="Reset atau Muat Data Demo"
-            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-all"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
+          {orders.length > 0 && (
+            <button
+              onClick={onResetData}
+              title="Bersihkan Semua Data"
+              className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-all"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 

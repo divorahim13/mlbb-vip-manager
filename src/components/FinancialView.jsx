@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { formatRupiah } from '../utils/pricing';
-import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard } from 'lucide-react';
+import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox } from 'lucide-react';
 
 export default function FinancialView({
   orders,
@@ -9,7 +9,8 @@ export default function FinancialView({
   onDeleteOrder,
   onExportCSV,
   onExportJSON,
-  onImportJSON
+  onImportJSON,
+  onOpenNewOrder
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -45,6 +46,8 @@ export default function FinancialView({
     });
     return acc;
   }, [orders]);
+
+  const methodEntries = Object.entries(methodBreakdown);
 
   // Filtered orders
   const filteredOrders = useMemo(() => {
@@ -129,25 +132,29 @@ export default function FinancialView({
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-800">
           <div>
-            <h3 className="font-extrabold text-white text-base">Distribusi Pembayaran</h3>
+            <h3 className="font-extrabold text-white text-base">Distribusi Saluran Pembayaran</h3>
             <p className="text-xs text-slate-400">Pemasukan berdasarkan saluran transfer / bank / e-wallet</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={onExportCSV}
-              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Download Excel/CSV</span>
-            </button>
-            <button
-              onClick={onExportJSON}
-              className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Backup</span>
-            </button>
+            {orders.length > 0 && (
+              <>
+                <button
+                  onClick={onExportCSV}
+                  className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 rounded-lg transition-all"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Download Excel/CSV</span>
+                </button>
+                <button
+                  onClick={onExportJSON}
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Backup</span>
+                </button>
+              </>
+            )}
             <label className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
               <span>Restore</span>
@@ -157,15 +164,21 @@ export default function FinancialView({
         </div>
 
         {/* Breakdown chips */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mt-3">
-          {Object.entries(methodBreakdown).map(([method, data]) => (
-            <div key={method} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <div className="text-[11px] font-bold text-slate-400 truncate">{method}</div>
-              <div className="text-xs font-black text-amber-400 mt-0.5">{formatRupiah(data.amount)}</div>
-              <div className="text-[10px] text-slate-400">{data.count} transaksi</div>
-            </div>
-          ))}
-        </div>
+        {methodEntries.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 mt-3">
+            {methodEntries.map(([method, data]) => (
+              <div key={method} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <div className="text-[11px] font-bold text-slate-400 truncate">{method}</div>
+                <div className="text-xs font-black text-amber-400 mt-0.5">{formatRupiah(data.amount)}</div>
+                <div className="text-[10px] text-slate-400">{data.count} transaksi</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-xs text-slate-500">
+            Belum ada transaksi pembayaran masuk. Pemasukan akan dikelompokkan di sini secara otomatis.
+          </div>
+        )}
       </div>
 
       {/* Main Financial Ledger / Transaction Table */}
@@ -177,31 +190,33 @@ export default function FinancialView({
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Search */}
-            <div className="relative min-w-[180px]">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Cari user / catatan..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
-              />
-            </div>
+          {orders.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Search */}
+              <div className="relative min-w-[180px]">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari user / catatan..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                />
+              </div>
 
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
-            >
-              <option value="ALL">Semua Status</option>
-              <option value="LUNAS">Lunas</option>
-              <option value="DP">DP (Kurang)</option>
-              <option value="BELUM_BAYAR">Belum Bayar</option>
-            </select>
-          </div>
+              {/* Status Filter */}
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+              >
+                <option value="ALL">Semua Status</option>
+                <option value="LUNAS">Lunas</option>
+                <option value="DP">DP (Kurang)</option>
+                <option value="BELUM_BAYAR">Belum Bayar</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Table */}
@@ -222,8 +237,12 @@ export default function FinancialView({
             <tbody className="divide-y divide-slate-800">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="py-8 text-center text-slate-400 italic">
-                    Tidak ada transaksi yang sesuai pencarian.
+                  <td colSpan="8" className="py-10 text-center">
+                    <div className="flex flex-col items-center justify-center text-slate-500">
+                      <Inbox className="w-8 h-8 text-slate-600 mb-2" />
+                      <p className="font-semibold text-slate-400">Belum ada transaksi pembayaran tercatat</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Daftarkan pemain pertama lewat tombol Order VIP</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
