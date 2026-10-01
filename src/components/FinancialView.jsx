@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { formatRupiah } from '../utils/pricing';
-import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox, Gamepad2, Heart } from 'lucide-react';
+import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox, Gamepad2, Heart, Edit3 } from 'lucide-react';
 
 export default function FinancialView({
   orders,
   onMarkPaid,
   onTopUpOrder,
+  onEditOrder,
   onDeleteOrder,
   onExportCSV,
   onExportJSON,
@@ -398,6 +399,13 @@ export default function FinancialView({
                             className="bg-slate-800 hover:bg-slate-700 text-amber-300 p-1 rounded"
                           >
                             <PlusCircle className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onEditOrder(ord)}
+                            title="Edit Data Customer"
+                            className="bg-slate-800 hover:bg-blue-900/60 text-blue-300 border border-blue-500/30 p-1 rounded transition-colors"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => onDeleteOrder(ord.id)}

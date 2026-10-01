@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Zap, Plus, CheckCircle, ShieldAlert, Gamepad2, KeyRound } from 'lucide-react';
+import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Zap, Plus, CheckCircle, ShieldAlert, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
 import { ROLE_DETAILS } from './RoomParty';
 
@@ -11,6 +11,7 @@ export default function WaitingQueue({
   onMoveOrder,
   onDeleteOrder,
   onTopUpOrder,
+  onEditOrder,
   onMarkPaid,
   onOpenNewOrder
 }) {
@@ -327,6 +328,15 @@ export default function WaitingQueue({
                           <Plus className="w-3.5 h-3.5" />
                         </button>
 
+                        {/* Edit */}
+                        <button
+                          onClick={() => onEditOrder(order)}
+                          title="Edit Data Customer"
+                          className="p-2 rounded-lg bg-slate-800 hover:bg-blue-900/60 text-blue-300 border border-blue-500/30 text-xs transition-colors"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+
                         {/* Delete */}
                         <button
                           onClick={() => onDeleteOrder(order.id)}
@@ -372,12 +382,19 @@ export default function WaitingQueue({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => onTopUpOrder(co)}
                       className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2.5 py-1 rounded-md"
                     >
                       Order Lagi (+Match)
+                    </button>
+                    <button
+                      onClick={() => onEditOrder(co)}
+                      title="Edit Data Customer"
+                      className="bg-slate-800 hover:bg-blue-900/60 text-blue-300 border border-blue-500/30 p-1 rounded transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => onDeleteOrder(co.id)}

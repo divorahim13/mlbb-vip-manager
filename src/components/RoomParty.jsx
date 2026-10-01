@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Crown, Shield, User, UserPlus, Play, CheckCircle2, XCircle, ArrowRightLeft, Sparkles, AlertCircle, Copy, Check, Plus, Swords, Zap, Heart, Wand2, Gamepad2, KeyRound } from 'lucide-react';
+import { Crown, Shield, User, UserPlus, Play, CheckCircle2, XCircle, ArrowRightLeft, Sparkles, AlertCircle, Copy, Check, Plus, Swords, Zap, Heart, Wand2, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
 
 export const ROLE_DETAILS = {
@@ -71,6 +71,7 @@ export default function RoomParty({
   onRemoveFromSlot,
   onFinishMatch,
   onTopUpOrder,
+  onEditOrder,
   onAutoRotate,
   waitingOrders,
   onOpenNewOrder
@@ -275,6 +276,14 @@ export default function RoomParty({
                         className="flex-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold py-1 rounded transition-colors"
                       >
                         + Top Up
+                      </button>
+                      <button
+                        onClick={() => onEditOrder(order)}
+                        title="Edit data akun / sisa match"
+                        className="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[10px] font-bold px-2 py-1 rounded transition-colors flex items-center gap-1"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit</span>
                       </button>
                       <button
                         onClick={() => setSlotPicker(slotKey)}

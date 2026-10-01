@@ -4,6 +4,7 @@ import RoomParty, { ROLE_DETAILS, ALL_5_SLOTS } from './components/RoomParty';
 import WaitingQueue from './components/WaitingQueue';
 import OrderModal from './components/OrderModal';
 import TopUpModal from './components/TopUpModal';
+import EditOrderModal from './components/EditOrderModal';
 import FinancialView from './components/FinancialView';
 import MatchHistoryView from './components/MatchHistoryView';
 import { playSound } from './utils/sound';
@@ -37,6 +38,7 @@ export default function App() {
 
   const [orderModalConfig, setOrderModalConfig] = useState({ isOpen: false, defaultType: 'VIP_MABAR' });
   const [topUpOrder, setTopUpOrder] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = 'success') => {
@@ -349,6 +351,56 @@ export default function App() {
     setOrders(updatedOrders);
     setRoomParty(updatedRoom);
     playSound('click');
+
+    // Immediate persist & cloud save
+    directPersistAndSync(updatedOrders, updatedRoom, matchHistory);
+  };
+
+  // Save edited customer order
+  const handleSaveEditOrder = (updatedOrder) => {
+    let updatedRoom = { ...roomParty };
+
+    // Check if this order is currently in a room slot
+    const currentSlotKey = Object.keys(updatedRoom).find(k => updatedRoom[k] === updatedOrder.id);
+
+    if (currentSlotKey) {
+      if (updatedOrder.matchesRemaining <= 0) {
+        // Quota is 0, kick out from slot
+        updatedRoom[currentSlotKey] = null;
+        updatedOrder.status = 'COMPLETED';
+        updatedOrder.roomSlot = null;
+      } else {
+        // Check if role or orderType changed
+        const targetSlot = getSlotKey(updatedOrder.role, updatedOrder.orderType);
+        if (targetSlot && targetSlot !== currentSlotKey) {
+          if (!updatedRoom[targetSlot]) {
+            // New slot is empty, move into it
+            updatedRoom[currentSlotKey] = null;
+            updatedRoom[targetSlot] = updatedOrder.id;
+            updatedOrder.roomSlot = targetSlot;
+          } else {
+            // New slot is already occupied, move to waiting queue
+            updatedRoom[currentSlotKey] = null;
+            updatedOrder.status = 'WAITING';
+            updatedOrder.roomSlot = null;
+          }
+        }
+      }
+    } else {
+      // Order is in waiting or completed
+      if (updatedOrder.matchesRemaining > 0 && updatedOrder.status === 'COMPLETED') {
+        updatedOrder.status = 'WAITING';
+      } else if (updatedOrder.matchesRemaining <= 0) {
+        updatedOrder.status = 'COMPLETED';
+      }
+    }
+
+    const updatedOrders = orders.map(o => (o.id === updatedOrder.id ? updatedOrder : o));
+
+    setOrders(updatedOrders);
+    setRoomParty(updatedRoom);
+    playSound('click');
+    showToast(`Data @${updatedOrder.username} berhasil diperbarui!`);
 
     // Immediate persist & cloud save
     directPersistAndSync(updatedOrders, updatedRoom, matchHistory);
@@ -804,6 +856,7 @@ export default function App() {
               onRemoveFromSlot={handleRemoveFromSlot}
               onFinishMatch={handleFinishMatch}
               onTopUpOrder={(order) => setTopUpOrder(order)}
+              onEditOrder={(order) => setEditingOrder(order)}
               onAutoRotate={handleAutoRotate}
               waitingOrders={waitingOrders}
               onOpenNewOrder={(category) => handleOpenOrderModal(category === 'JOKI' ? 'JOKI' : 'VIP_MABAR')}
@@ -818,6 +871,7 @@ export default function App() {
               onMoveOrder={handleMoveOrder}
               onDeleteOrder={handleDeleteOrder}
               onTopUpOrder={(order) => setTopUpOrder(order)}
+              onEditOrder={(order) => setEditingOrder(order)}
               onMarkPaid={handleMarkPaid}
               onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
             />
@@ -829,6 +883,7 @@ export default function App() {
             orders={orders}
             onMarkPaid={handleMarkPaid}
             onTopUpOrder={(order) => setTopUpOrder(order)}
+            onEditOrder={(order) => setEditingOrder(order)}
             onDeleteOrder={handleDeleteOrder}
             onExportCSV={handleExportCSV}
             onExportJSON={handleExportJSON}
@@ -865,6 +920,13 @@ export default function App() {
         order={topUpOrder}
         onClose={() => setTopUpOrder(null)}
         onConfirm={handleTopUpConfirm}
+      />
+
+      <EditOrderModal
+        isOpen={!!editingOrder}
+        order={editingOrder}
+        onClose={() => setEditingOrder(null)}
+        onSave={handleSaveEditOrder}
       />
 
       {/* Footer */}
