@@ -9,7 +9,9 @@ export async function fetchCloudData() {
     const res = await fetch(`${API_URL}?t=${Date.now()}`, {
       method: 'GET',
       headers: {
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
       },
       cache: 'no-store'
     });
@@ -37,13 +39,14 @@ export async function saveCloudData(payload) {
     });
 
     if (!res.ok) {
-      throw new Error(`Cloud DB Save HTTP ${res.status}`);
+      const errText = await res.text();
+      throw new Error(`Cloud DB Save HTTP ${res.status}: ${errText}`);
     }
 
     const json = await res.json();
     return json;
   } catch (err) {
-    console.warn('Gagal menyimpan data ke Cloud DB:', err.message);
+    console.error('Gagal menyimpan data ke Cloud DB:', err);
     return { success: false, error: err.message };
   }
 }
