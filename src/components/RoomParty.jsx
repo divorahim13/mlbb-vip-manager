@@ -393,10 +393,10 @@ export default function RoomParty({
                   {slotDef.icon}
                 </div>
                 <span className="text-[11px] font-black uppercase text-amber-400">
-                  SLOT VIP {slotDef.role}
+                  SLOT VIP {slotDef.name.toUpperCase()}
                 </span>
-                <span className="text-[10px] text-slate-400 font-semibold mb-2">
-                  ({slotDef.name})
+                <span className="text-[10px] text-slate-400 font-medium mb-2">
+                  {slotDef.desc}
                 </span>
 
                 {waitingOrders.length > 0 ? (
