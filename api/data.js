@@ -68,7 +68,7 @@ export default async function handler(req, res) {
         orders: Array.isArray(payload.orders) ? payload.orders : [],
         roomParty: payload.roomParty || { jokiGold: null, jokiJungle: null, mid: null, roam: null, exp: null },
         matchHistory: Array.isArray(payload.matchHistory) ? payload.matchHistory : [],
-        updatedAt: payload.updatedAt || now,
+        updatedAt: now,
         version: payload.version || 1
       };
 
