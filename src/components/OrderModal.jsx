@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { calculatePricing, formatRupiah, RATE_SINGLE, RATE_BUNDLE_5, BUNDLE_SIZE } from '../utils/pricing';
-import { Crown, Sparkles, Check, DollarSign, Smartphone, User, Swords, ShieldCheck, Tag, Info } from 'lucide-react';
-import { ROLE_DETAILS } from './RoomParty';
+import { calculatePricing, formatRupiah } from '../utils/pricing';
+import { Crown, Sparkles, Check, DollarSign, Smartphone, User, Swords, ShieldCheck, Tag, Info, Gamepad2, UserCheck, KeyRound } from 'lucide-react';
 
 const PAYMENT_METHODS = [
   'DANA',
@@ -16,24 +15,43 @@ const PAYMENT_METHODS = [
   'Cash / Tunai'
 ];
 
-// VIP Roles ONLY: Mid Lane (Myth), Roamer (Room), Exp Lane (Exp), or Any
-export const VIP_ROLES = [
-  { value: 'Mid Lane', label: 'Mid Lane (Myth)', icon: '🔮' },
-  { value: 'Roamer', label: 'Roamer (Room)', icon: '❤️' },
-  { value: 'Exp Lane', label: 'Exp Lane (Exp)', icon: '🛡️' },
-  { value: 'Any', label: 'Bebas (Mid / Roam / Exp)', icon: '🎮' }
+export const JOKI_ROLES = [
+  { value: 'Gold Lane', label: 'Gold Lane 🏹 (Dimainin Saya)', icon: '🏹', pilot: 'Saya' },
+  { value: 'Jungler', label: 'Jungler ⚡ (Dimainin Teman)', icon: '⚡', pilot: 'Teman' }
 ];
 
-export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
+export const VIP_MABAR_ROLES = [
+  { value: 'Mid Lane', label: 'Mid Lane (Myth) 🔮', icon: '🔮' },
+  { value: 'Roamer', label: 'Roamer (Room) ❤️', icon: '❤️' },
+  { value: 'Exp Lane', label: 'Exp Lane (Exp) 🛡️', icon: '🛡️' },
+  { value: 'Any', label: 'Bebas (Mid / Roam / Exp) 🎮', icon: '🎮' }
+];
+
+export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 'VIP_MABAR' }) {
+  const [orderType, setOrderType] = useState(defaultOrderType); // 'JOKI' | 'VIP_MABAR'
   const [username, setUsername] = useState('');
   const [userId, setUserId] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('Mid Lane');
+  const [accountLogin, setAccountLogin] = useState(''); // Catatan login untuk Joki Akun
+  const [role, setRole] = useState(defaultOrderType === 'JOKI' ? 'Gold Lane' : 'Mid Lane');
   const [matches, setMatches] = useState(5);
   const [paymentMethod, setPaymentMethod] = useState('DANA');
   const [amountPaid, setAmountPaid] = useState('');
   const [transferNote, setTransferNote] = useState('');
   const [directToRoom, setDirectToRoom] = useState(hasEmptySlot);
+
+  // Auto-switch default role when orderType changes
+  useEffect(() => {
+    if (orderType === 'JOKI') {
+      if (role !== 'Gold Lane' && role !== 'Jungler') {
+        setRole('Gold Lane');
+      }
+    } else {
+      if (role === 'Gold Lane' || role === 'Jungler') {
+        setRole('Mid Lane');
+      }
+    }
+  }, [orderType]);
 
   // Pricing calculation
   const pricing = calculatePricing(matches);
@@ -62,14 +80,16 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!username.trim()) {
-      alert('Mohon isi Username / IGN MLBB');
+      alert('Mohon isi Username / IGN Akun Customer');
       return;
     }
 
     const orderData = {
+      orderType, // 'JOKI' | 'VIP_MABAR'
       username: username.trim(),
       userId: userId.trim(),
       phone: phone.trim(),
+      accountLogin: accountLogin.trim(),
       role,
       matchesOrdered: pricing.count,
       matchesRemaining: pricing.count,
@@ -95,8 +115,8 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
               <Crown className="w-4 h-4 fill-current" />
             </div>
             <div>
-              <h3 className="text-lg font-black text-white">Order Mabar VIP Baru</h3>
-              <p className="text-[11px] text-slate-400">Pencatatan data transfer & paket match VIP</p>
+              <h3 className="text-lg font-black text-white">Input Pesanan Customer</h3>
+              <p className="text-[11px] text-slate-400">Pilih tipe: Joki Akun (Pilot) atau VIP Mabar (Main Sendiri)</p>
             </div>
           </div>
           <button
@@ -107,32 +127,99 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
           </button>
         </div>
 
-        {/* Info Banner: Role Pilot vs VIP */}
-        <div className="mt-3.5 bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-xs flex items-start gap-2.5">
-          <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-          <div className="text-slate-300 text-[11px]">
-            <span className="font-bold text-blue-300">Struktur Party Mabar VIP:</span> Role <strong>Gold Lane 🏹 & Jungler ⚡</strong> dimainkan tim Pilot (mainin akun). Slot berbayar VIP hanya untuk <strong className="text-amber-300">Mid Lane (Myth)</strong>, <strong className="text-amber-300">Roamer (Room)</strong>, dan <strong className="text-amber-300">Exp Lane (Exp)</strong>.
-          </div>
+        {/* Tipe Layanan Selector: Joki Akun vs VIP Mabar */}
+        <div className="mt-4 grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setOrderType('JOKI')}
+            className={`py-2 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-2 transition-all ${
+              orderType === 'JOKI'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-glow-blue'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Gamepad2 className="w-4 h-4" />
+            <span>🎮 Joki Akun (Dimainin Pilot)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setOrderType('VIP_MABAR')}
+            className={`py-2 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-2 transition-all ${
+              orderType === 'VIP_MABAR'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-glow-gold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Crown className="w-4 h-4" />
+            <span>🌟 VIP Mabar (Main Sendiri)</span>
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          {/* Section: Player MLBB Info */}
+        {/* Info Banner per tipe */}
+        <div className="mt-3">
+          {orderType === 'JOKI' ? (
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-2.5 text-xs text-blue-300 flex items-start gap-2">
+              <Gamepad2 className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+              <div className="text-[11px]">
+                <strong className="text-white">Akun Customer Dijokiin:</strong> Akun ini akan dimainkan langsung oleh Anda (<strong>Gold Lane 🏹</strong>) atau teman Anda (<strong>Jungler ⚡</strong>).
+              </div>
+            </div>
+          ) : (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 text-xs text-amber-300 flex items-start gap-2">
+              <Crown className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-[11px]">
+                <strong className="text-white">Customer Ikut Main Bareng:</strong> Customer login ke akunnya sendiri dan mengisi slot <strong>Mid Lane (Myth)</strong>, <strong>Roamer (Room)</strong>, atau <strong>Exp Lane (Exp)</strong>.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-3.5 space-y-4">
+          {/* Section: Player / Customer Info */}
           <div className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Username / IGN MLBB <span className="text-amber-400">*</span>
+                  IGN / Nickname Akun Customer <span className="text-amber-400">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Masukkan Nickname MLBB"
+                  placeholder="Contoh: Nickname Game"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  Pilihan Role / Slot <span className="text-amber-400">*</span>
+                </label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                >
+                  {orderType === 'JOKI' ? (
+                    JOKI_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))
+                  ) : (
+                    VIP_MABAR_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
                   ID & Server MLBB (Opsional)
@@ -145,12 +232,10 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Nomor WhatsApp (Opsional)
+                  Nomor WhatsApp Customer
                 </label>
                 <input
                   type="tel"
@@ -160,24 +245,23 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"
                 />
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  Pilihan Role VIP <span className="text-amber-400">*</span>
-                </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
-                >
-                  {VIP_ROLES.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.icon} {r.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
+
+            {/* Login Note khusus untuk Joki Akun */}
+            {orderType === 'JOKI' && (
+              <div>
+                <label className="block text-xs font-bold text-blue-300 mb-1 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5" /> Catatan Akun / Data Login Joki (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Akun Moonton / Login VK / Request Hero Fanny"
+                  value={accountLogin}
+                  onChange={(e) => setAccountLogin(e.target.value)}
+                  className="w-full bg-slate-950 border border-blue-500/40 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none"
+                />
+              </div>
+            )}
           </div>
 
           {/* Section: Match Calculator with Kelipatan Rules */}
@@ -364,7 +448,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
                   className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700"
                 />
                 <span className="text-xs text-slate-300">
-                  ⚡ <strong>Langsung masukkan ke Slot VIP kosong</strong> (Lewati antrean)
+                  ⚡ <strong>Langsung masukkan ke Slot Room kosong</strong> (Lewati antrean)
                 </span>
               </label>
             )}
@@ -383,7 +467,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot }) {
               type="submit"
               className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-glow-gold transition-all transform active:scale-95"
             >
-              Simpan & Daftarkan VIP
+              Simpan & Daftarkan
             </button>
           </div>
         </form>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { formatRupiah } from '../utils/pricing';
-import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox } from 'lucide-react';
+import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox, Gamepad2 } from 'lucide-react';
 
 export default function FinancialView({
   orders,
@@ -15,6 +15,7 @@ export default function FinancialView({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [methodFilter, setMethodFilter] = useState('ALL');
+  const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'JOKI' | 'VIP_MABAR'
 
   // Financial calculations
   const totalRevenue = useMemo(() => {
@@ -31,6 +32,15 @@ export default function FinancialView({
 
   const totalMatchesOrdered = useMemo(() => {
     return orders.reduce((sum, o) => sum + (Number(o.matchesOrdered) || 0), 0);
+  }, [orders]);
+
+  // Joki revenue vs VIP revenue
+  const jokiRevenue = useMemo(() => {
+    return orders.filter(o => o.orderType === 'JOKI').reduce((sum, o) => sum + (Number(o.amountPaid) || 0), 0);
+  }, [orders]);
+
+  const vipRevenue = useMemo(() => {
+    return orders.filter(o => o.orderType !== 'JOKI').reduce((sum, o) => sum + (Number(o.amountPaid) || 0), 0);
   }, [orders]);
 
   // Breakdown by payment method
@@ -56,14 +66,16 @@ export default function FinancialView({
         o.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (o.transferNote && o.transferNote.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (o.userId && o.userId.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (o.accountLogin && o.accountLogin.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (o.phone && o.phone.includes(searchTerm));
 
       const matchStatus = statusFilter === 'ALL' || o.paymentStatus === statusFilter;
       const matchMethod = methodFilter === 'ALL' || o.paymentMethod === methodFilter;
+      const matchType = typeFilter === 'ALL' || (typeFilter === 'JOKI' ? o.orderType === 'JOKI' : o.orderType !== 'JOKI');
 
-      return matchSearch && matchStatus && matchMethod;
+      return matchSearch && matchStatus && matchMethod && matchType;
     });
-  }, [orders, searchTerm, statusFilter, methodFilter]);
+  }, [orders, searchTerm, statusFilter, methodFilter, typeFilter]);
 
   return (
     <div className="space-y-6">
@@ -72,7 +84,7 @@ export default function FinancialView({
         {/* Total Omset */}
         <div className="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-4 shadow-lg relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Omzet Diterima</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Omzet Masuk</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
               <DollarSign className="w-4 h-4" />
             </div>
@@ -80,7 +92,9 @@ export default function FinancialView({
           <div className="text-2xl font-black text-emerald-400 mt-2">
             {formatRupiah(totalRevenue)}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Uang riil yang sudah ditransfer VIP</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Joki: {formatRupiah(jokiRevenue)} • VIP: {formatRupiah(vipRevenue)}
+          </p>
         </div>
 
         {/* Total Piutang */}
@@ -108,7 +122,7 @@ export default function FinancialView({
           <div className="text-2xl font-black text-white mt-2">
             {formatRupiah(totalBilled)}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Akumulasi nilai seluruh pesanan</p>
+          <p className="text-[11px] text-slate-400 mt-1">Akumulasi seluruh pesanan Joki & VIP</p>
         </div>
 
         {/* Total Match Terjual */}
@@ -186,23 +200,34 @@ export default function FinancialView({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-800">
           <div>
             <h3 className="text-lg font-black text-white">Buku Kas & Riwayat Transaksi</h3>
-            <p className="text-xs text-slate-400">Daftar semua pembayaran pesanan mabar VIP</p>
+            <p className="text-xs text-slate-400">Daftar semua pembayaran pesanan Joki & VIP Mabar</p>
           </div>
 
           {/* Filters */}
           {orders.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
               {/* Search */}
-              <div className="relative min-w-[180px]">
+              <div className="relative min-w-[170px]">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Cari user / catatan..."
+                  placeholder="Cari user / login / catatan..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
                 />
               </div>
+
+              {/* Type Filter */}
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+              >
+                <option value="ALL">Semua Layanan</option>
+                <option value="JOKI">🎮 Joki Akun</option>
+                <option value="VIP_MABAR">🌟 VIP Mabar</option>
+              </select>
 
               {/* Status Filter */}
               <select
@@ -225,7 +250,7 @@ export default function FinancialView({
             <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider font-extrabold">
               <tr>
                 <th className="py-3 px-3 rounded-l-lg">Tanggal / Waktu</th>
-                <th className="py-3 px-3">Player VIP</th>
+                <th className="py-3 px-3">Customer & Layanan</th>
                 <th className="py-3 px-3">Paket Match</th>
                 <th className="py-3 px-3">Metode Transfer</th>
                 <th className="py-3 px-3">Total Tagihan</th>
@@ -241,13 +266,14 @@ export default function FinancialView({
                     <div className="flex flex-col items-center justify-center text-slate-500">
                       <Inbox className="w-8 h-8 text-slate-600 mb-2" />
                       <p className="font-semibold text-slate-400">Belum ada transaksi pembayaran tercatat</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Daftarkan pemain pertama lewat tombol Order VIP</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Daftarkan pemain pertama lewat tombol Order VIP / Joki</p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 filteredOrders.map((ord) => {
                   const underpaid = Math.max(0, (ord.priceTotal || 0) - (ord.amountPaid || 0));
+                  const isJoki = ord.orderType === 'JOKI';
 
                   return (
                     <tr key={ord.id} className="hover:bg-slate-800/40 transition-colors">
@@ -261,9 +287,20 @@ export default function FinancialView({
                       </td>
 
                       <td className="py-3 px-3">
-                        <div className="font-extrabold text-white text-xs">{ord.username}</div>
-                        <div className="text-[10px] text-slate-400 truncate max-w-[120px]">
-                          {ord.userId || '-'}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-extrabold text-white text-xs">{ord.username}</span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
+                              isJoki
+                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }`}
+                          >
+                            {isJoki ? `🎮 Joki ${ord.role}` : `🌟 VIP ${ord.role}`}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate max-w-[140px]">
+                          {ord.userId || '-'} {ord.accountLogin && `• Login: ${ord.accountLogin}`}
                         </div>
                       </td>
 

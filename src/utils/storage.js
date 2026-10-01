@@ -1,29 +1,23 @@
-// LocalStorage management - Clean production state for 2 Pilots + 3 VIPs
+// LocalStorage management - Clean production state for 2 Joki Accounts + 3 VIP Mabar
 
 export const STORAGE_KEYS = {
-  ORDERS: 'mlbb_vip_orders_v3',
-  ROOM_PARTY: 'mlbb_vip_room_v3',
-  MATCH_HISTORY: 'mlbb_vip_history_v3',
-  PILOTS_INFO: 'mlbb_vip_pilots_v3',
+  ORDERS: 'mlbb_vip_orders_v4',
+  ROOM_PARTY: 'mlbb_vip_room_v4',
+  MATCH_HISTORY: 'mlbb_vip_history_v4',
+  PILOT_SETTINGS: 'mlbb_vip_pilot_settings_v4',
 };
 
-export const INITIAL_PILOTS = {
-  gold: {
-    name: 'Saya (Admin)',
-    role: 'Gold Lane',
-    type: 'Mainin Akun',
-    hero: 'Marksman Carry'
-  },
-  jungler: {
-    name: 'Teman (Partner)',
-    role: 'Jungler',
-    type: 'Mainin Akun',
-    hero: 'Assassin / Fighter Core'
-  }
+export const INITIAL_PILOT_SETTINGS = {
+  pilotGoldName: 'Saya (Admin)',
+  pilotJungleName: 'Teman (Partner)'
 };
 
-// 3 VIP Slots: Mid Lane (Myth), Roamer (Room), Exp Lane (Exp)
+// 5 Slots Total:
+// - 2 Joki Slots (Dimainin Pilot): jokiGold (Saya), jokiJungle (Teman)
+// - 3 VIP Mabar Slots (Customer Main Sendiri): mid, roam, exp
 export const INITIAL_ROOM = {
+  jokiGold: null,
+  jokiJungle: null,
   mid: null,
   roam: null,
   exp: null

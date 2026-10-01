@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
-import RoomParty, { ROLE_DETAILS, VIP_SLOT_DEFS } from './components/RoomParty';
+import RoomParty, { ROLE_DETAILS, ALL_5_SLOTS } from './components/RoomParty';
 import WaitingQueue from './components/WaitingQueue';
 import OrderModal from './components/OrderModal';
 import TopUpModal from './components/TopUpModal';
@@ -10,7 +10,6 @@ import { playSound } from './utils/sound';
 import { formatRupiah } from './utils/pricing';
 import {
   STORAGE_KEYS,
-  INITIAL_PILOTS,
   INITIAL_ORDERS,
   INITIAL_ROOM,
   INITIAL_MATCH_HISTORY,
@@ -23,10 +22,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('room'); // 'room' | 'finance' | 'history'
   const [orders, setOrders] = useState(() => loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS));
   const [roomParty, setRoomParty] = useState(() => loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM));
-  const [pilotsInfo, setPilotsInfo] = useState(() => loadData(STORAGE_KEYS.PILOTS_INFO, INITIAL_PILOTS));
   const [matchHistory, setMatchHistory] = useState(() => loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY));
 
-  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [orderModalConfig, setOrderModalConfig] = useState({ isOpen: false, defaultType: 'VIP_MABAR' });
   const [topUpOrder, setTopUpOrder] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -38,10 +36,6 @@ export default function App() {
   useEffect(() => {
     saveData(STORAGE_KEYS.ROOM_PARTY, roomParty);
   }, [roomParty]);
-
-  useEffect(() => {
-    saveData(STORAGE_KEYS.PILOTS_INFO, pilotsInfo);
-  }, [pilotsInfo]);
 
   useEffect(() => {
     saveData(STORAGE_KEYS.MATCH_HISTORY, matchHistory);
@@ -57,14 +51,28 @@ export default function App() {
   // Filter orders by status
   const waitingOrders = orders.filter(o => o.status === 'WAITING');
   const completedOrders = orders.filter(o => o.status === 'COMPLETED');
-  const hasEmptySlot = !roomParty.mid || !roomParty.roam || !roomParty.exp;
+  const hasEmptySlot = !roomParty.jokiGold || !roomParty.jokiJungle || !roomParty.mid || !roomParty.roam || !roomParty.exp;
 
-  // Determine slot key from role
-  const getSlotKeyForRole = (role) => {
-    if (role === 'Mid Lane') return 'mid';
-    if (role === 'Roamer') return 'roam';
-    if (role === 'Exp Lane') return 'exp';
+  // Determine slot key from role & orderType
+  const getSlotKey = (role, orderType) => {
+    if (orderType === 'JOKI') {
+      if (role === 'Gold Lane') return 'jokiGold';
+      if (role === 'Jungler') return 'jokiJungle';
+    } else {
+      if (role === 'Mid Lane') return 'mid';
+      if (role === 'Roamer') return 'roam';
+      if (role === 'Exp Lane') return 'exp';
+    }
     return null;
+  };
+
+  const getSlotTitle = (slotKey) => {
+    return ALL_5_SLOTS.find(s => s.key === slotKey)?.title || slotKey;
+  };
+
+  // Open order modal with specified default type
+  const handleOpenOrderModal = (type = 'VIP_MABAR') => {
+    setOrderModalConfig({ isOpen: true, defaultType: type });
   };
 
   // Create new order
@@ -83,23 +91,26 @@ export default function App() {
 
     // Direct into room if requested and slot available
     if (newOrderData.directToRoom) {
-      let targetSlot = getSlotKeyForRole(newOrderData.role);
+      let targetSlot = getSlotKey(newOrderData.role, newOrderData.orderType);
       if (!targetSlot || updatedRoom[targetSlot]) {
-        // Fallback to any empty VIP slot
-        targetSlot = ['mid', 'roam', 'exp'].find(k => !updatedRoom[k]);
+        // Fallback to any empty slot matching the category
+        if (newOrderData.orderType === 'JOKI') {
+          targetSlot = ['jokiGold', 'jokiJungle'].find(k => !updatedRoom[k]);
+        } else {
+          targetSlot = ['mid', 'roam', 'exp'].find(k => !updatedRoom[k]);
+        }
       }
 
       if (targetSlot) {
         newOrder.status = 'IN_ROOM';
         newOrder.roomSlot = targetSlot;
         updatedRoom[targetSlot] = newId;
-        const roleLabel = VIP_SLOT_DEFS.find(s => s.key === targetSlot)?.name || targetSlot;
-        showToast(`Pesanan VIP @${newOrder.username} berhasil dibuat & langsung masuk Slot ${roleLabel}!`);
+        showToast(`Akun customer @${newOrder.username} berhasil didaftarkan & langsung masuk ke ${getSlotTitle(targetSlot)}!`);
       } else {
-        showToast(`Pesanan VIP @${newOrder.username} berhasil ditambahkan ke Antrean!`);
+        showToast(`Pesanan @${newOrder.username} (${newOrder.orderType === 'JOKI' ? 'Joki' : 'VIP Mabar'}) berhasil masuk Antrean!`);
       }
     } else {
-      showToast(`Pesanan VIP @${newOrder.username} berhasil ditambahkan ke Antrean!`);
+      showToast(`Pesanan @${newOrder.username} (${newOrder.orderType === 'JOKI' ? 'Joki' : 'VIP Mabar'}) berhasil masuk Antrean!`);
     }
 
     setOrders(updatedOrders);
@@ -107,7 +118,7 @@ export default function App() {
     playSound('click');
   };
 
-  // Put player into a specific slot ('mid' | 'roam' | 'exp')
+  // Put player into a specific slot in room
   const handleFillSlot = (slotKey, orderId) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
@@ -135,8 +146,7 @@ export default function App() {
     setOrders(updatedOrders);
     setRoomParty(prev => ({ ...prev, [slotKey]: orderId }));
     playSound('click');
-    const roleLabel = VIP_SLOT_DEFS.find(s => s.key === slotKey)?.name || slotKey;
-    showToast(`@${targetOrder.username} sekarang aktif di Slot VIP ${roleLabel}!`);
+    showToast(`@${targetOrder.username} sekarang aktif di ${getSlotTitle(slotKey)}!`);
   };
 
   // Put next waiting order into next available slot
@@ -144,18 +154,16 @@ export default function App() {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
 
-    let targetSlot = getSlotKeyForRole(targetOrder.role);
+    let targetSlot = getSlotKey(targetOrder.role, targetOrder.orderType);
     if (!targetSlot || roomParty[targetSlot]) {
-      targetSlot = ['mid', 'roam', 'exp'].find(k => !roomParty[k]);
+      if (targetOrder.orderType === 'JOKI') {
+        targetSlot = ['jokiGold', 'jokiJungle'].find(k => !roomParty[k]) || 'jokiGold';
+      } else {
+        targetSlot = ['mid', 'roam', 'exp'].find(k => !roomParty[k]) || 'mid';
+      }
     }
 
-    if (targetSlot) {
-      handleFillSlot(targetSlot, orderId);
-    } else {
-      // If all slots are full, swap into matching role slot or 'mid'
-      const fallback = getSlotKeyForRole(targetOrder.role) || 'mid';
-      handleFillSlot(fallback, orderId);
-    }
+    handleFillSlot(targetSlot, orderId);
   };
 
   // Remove player from slot
@@ -169,30 +177,43 @@ export default function App() {
     setOrders(orders.map(o => (o.id === orderId ? { ...o, status: newStatus, roomSlot: null } : o)));
     setRoomParty(prev => ({ ...prev, [slotKey]: null }));
     playSound('click');
-    const roleLabel = VIP_SLOT_DEFS.find(s => s.key === slotKey)?.name || slotKey;
-    showToast(order ? `@${order.username} dikeluarkan dari Slot ${roleLabel} ke ${newStatus === 'WAITING' ? 'Antrean' : 'Selesai'}.` : 'Slot dikosongkan.');
+    showToast(order ? `Akun @${order.username} dikeluarkan dari ${getSlotTitle(slotKey)} ke ${newStatus === 'WAITING' ? 'Antrean' : 'Selesai'}.` : 'Slot dikosongkan.');
   };
 
-  // Auto rotate: replace expired player with matching role waiting player or #1 in queue
+  // Auto rotate: replace expired player with matching waiting player or #1 in queue
   const handleAutoRotate = (slotKey) => {
     if (waitingOrders.length === 0) {
       showToast('Tidak ada antrean tunggu untuk rotasi.', 'error');
       return;
     }
 
-    const slotDef = VIP_SLOT_DEFS.find(s => s.key === slotKey);
+    const slotDef = ALL_5_SLOTS.find(s => s.key === slotKey);
     const targetRole = slotDef?.role;
 
     // Find best match in queue
-    const bestMatch = waitingOrders.find(o => o.role === targetRole || o.role === 'Any') || waitingOrders[0];
-    handleFillSlot(slotKey, bestMatch.id);
+    const bestMatch = waitingOrders.find(
+      o => o.role === targetRole || (o.orderType === slotDef?.category && o.role === 'Any')
+    ) || (slotDef?.category === 'JOKI' ? waitingOrders.find(o => o.orderType === 'JOKI') : waitingOrders[0]);
+
+    if (bestMatch) {
+      handleFillSlot(slotKey, bestMatch.id);
+    } else {
+      showToast(`Tidak ada antrean yang cocok untuk ${slotDef?.title}.`, 'error');
+    }
   };
 
-  // Finish 1 match (Win or Lose)
+  // Finish 1 match (Win or Lose) - cuts quota for ALL active accounts in room!
   const handleFinishMatch = (result) => {
-    const activeSlotPlayerIds = [roomParty.mid, roomParty.roam, roomParty.exp].filter(Boolean);
+    const activeSlotPlayerIds = [
+      roomParty.jokiGold,
+      roomParty.jokiJungle,
+      roomParty.mid,
+      roomParty.roam,
+      roomParty.exp
+    ].filter(Boolean);
+
     if (activeSlotPlayerIds.length === 0) {
-      showToast('Tidak ada pemain VIP di dalam room.', 'error');
+      showToast('Tidak ada akun customer di dalam room.', 'error');
       return;
     }
 
@@ -202,10 +223,10 @@ export default function App() {
     // Decrement matches remaining for all active room players
     const updatedOrders = orders.map(ord => {
       if (activeSlotPlayerIds.includes(ord.id)) {
-        participants.push(ord.username);
+        participants.push(`@${ord.username} (${ord.orderType === 'JOKI' ? 'Joki ' + ord.role : 'VIP ' + ord.role})`);
         const newRemaining = Math.max(0, ord.matchesRemaining - 1);
         if (newRemaining === 0) {
-          expiredList.push(ord.username);
+          expiredList.push(`@${ord.username}`);
         }
         return {
           ...ord,
@@ -222,8 +243,8 @@ export default function App() {
       matchNumber: matchHistory.length + 1,
       result, // 'WIN' | 'LOSE'
       timestamp: new Date().toISOString(),
-      participants: [`Pilot Gold: ${pilotsInfo.gold.name}`, `Pilot Jungle: ${pilotsInfo.jungler.name}`, ...participants],
-      mvp: result === 'WIN' ? `${pilotsInfo.gold.name} (Gold) / ${pilotsInfo.jungler.name} (Jungle)` : null,
+      participants,
+      mvp: result === 'WIN' ? participants[0] || 'Team Carry' : null,
       durationMinutes: 15
     };
 
@@ -233,7 +254,7 @@ export default function App() {
     // Audio feedback
     if (result === 'WIN') {
       playSound('victory');
-      showToast(`🏆 VICTORY! Kuota -1 untuk semua VIP di Room.`);
+      showToast(`🏆 VICTORY! Kuota -1 untuk semua akun customer (Joki & VIP) di Room.`);
     } else {
       playSound('defeat');
       showToast(`💀 DEFEAT! Kuota -1 dicatat.`);
@@ -242,7 +263,7 @@ export default function App() {
     if (expiredList.length > 0) {
       setTimeout(() => {
         playSound('alert');
-        showToast(`🚨 Perhatian: Kuota mabar VIP ${expiredList.join(', ')} telah HABIS!`);
+        showToast(`🚨 Perhatian: Kuota mabar/joki ${expiredList.join(', ')} telah HABIS!`);
       }, 1200);
     }
   };
@@ -308,10 +329,10 @@ export default function App() {
 
   // Delete an order
   const handleDeleteOrder = (orderId) => {
-    if (!window.confirm('Yakin ingin menghapus data pemain ini?')) return;
+    if (!window.confirm('Yakin ingin menghapus data customer ini?')) return;
 
     const updatedRoom = { ...roomParty };
-    ['mid', 'roam', 'exp'].forEach(k => {
+    ['jokiGold', 'jokiJungle', 'mid', 'roam', 'exp'].forEach(k => {
       if (updatedRoom[k] === orderId) {
         updatedRoom[k] = null;
       }
@@ -324,10 +345,9 @@ export default function App() {
 
   // Reset all data
   const handleResetData = () => {
-    if (window.confirm('Bersihkan seluruh data (order, antrean, dan riwayat match)?')) {
+    if (window.confirm('Bersihkan seluruh data order, antrean, dan riwayat?')) {
       setOrders([]);
-      setRoomParty({ mid: null, roam: null, exp: null });
-      setPilotsInfo(INITIAL_PILOTS);
+      setRoomParty({ jokiGold: null, jokiJungle: null, mid: null, roam: null, exp: null });
       setMatchHistory([]);
       showToast('Seluruh data berhasil dibersihkan.');
     }
@@ -343,42 +363,44 @@ export default function App() {
     });
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    const jGold = orders.find(o => o.id === roomParty.jokiGold);
+    const jJungle = orders.find(o => o.id === roomParty.jokiJungle);
     const midOrder = orders.find(o => o.id === roomParty.mid);
     const roamOrder = orders.find(o => o.id === roomParty.roam);
     const expOrder = orders.find(o => o.id === roomParty.exp);
 
-    let text = `👑 *MLBB VIP MABAR - UPDATE PARTY & ANTREAN* 👑\n`;
+    let text = `👑 *MLBB VIP MABAR & JOKI - UPDATE PARTY 5v5* 👑\n`;
     text += `📅 ${dateStr} • ⏰ ${timeStr} WIB\n\n`;
 
-    text += `🎮 *TIM PILOT CARRY (MAININ AKUN):*\n`;
-    text += `🏹 *Gold Lane:* ${pilotsInfo.gold.name} (${pilotsInfo.gold.hero})\n`;
-    text += `⚡ *Jungler:* ${pilotsInfo.jungler.name} (${pilotsInfo.jungler.hero})\n\n`;
+    text += `🎮 *AKUN JOKI YANG SEDANG DIMAINKAN (PILOT):*\n`;
+    text += `🏹 Gold Lane (Dimainin Saya): ${jGold ? `*${jGold.username}* | Sisa: *${jGold.matchesRemaining} Match* [${jGold.paymentStatus}]` : '_[SLOT JOKI KOSONG - BISA MASUK]_'}\n`;
+    text += `⚡ Jungler (Dimainin Teman): ${jJungle ? `*${jJungle.username}* | Sisa: *${jJungle.matchesRemaining} Match* [${jJungle.paymentStatus}]` : '_[SLOT JOKI KOSONG - BISA MASUK]_'}\n\n`;
 
-    text += `🌟 *SLOT VIP CLIENT AKTIF (3 SLOT):*\n`;
-    text += `🔮 *Mid Lane (Myth):* ${midOrder ? `*${midOrder.username}* | Sisa: *${midOrder.matchesRemaining} Match* [${midOrder.paymentStatus}]` : '_[KOSONG - BISA MASUK]_'}\n`;
-    text += `❤️ *Roamer (Room):* ${roamOrder ? `*${roamOrder.username}* | Sisa: *${roamOrder.matchesRemaining} Match* [${roamOrder.paymentStatus}]` : '_[KOSONG - BISA MASUK]_'}\n`;
-    text += `🛡️ *Exp Lane (Exp):* ${expOrder ? `*${expOrder.username}* | Sisa: *${expOrder.matchesRemaining} Match* [${expOrder.paymentStatus}]` : '_[KOSONG - BISA MASUK]_'}\n`;
+    text += `🌟 *AKUN VIP MABAR IN-GAME (MAIN SENDIRI):*\n`;
+    text += `🔮 Mid Lane (Myth): ${midOrder ? `*${midOrder.username}* | Sisa: *${midOrder.matchesRemaining} Match* [${midOrder.paymentStatus}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
+    text += `❤️ Roamer (Room): ${roamOrder ? `*${roamOrder.username}* | Sisa: *${roamOrder.matchesRemaining} Match* [${roamOrder.paymentStatus}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
+    text += `🛡️ Exp Lane (Exp): ${expOrder ? `*${expOrder.username}* | Sisa: *${expOrder.matchesRemaining} Match* [${expOrder.paymentStatus}]` : '_[SLOT VIP KOSONG - BISA MASUK]_'}\n`;
 
-    text += `\n⏳ *ANTREAN MENUNGGU (MID / ROAM / EXP):*\n`;
+    text += `\n⏳ *ANTREAN MENUNGGU (JOKI & VIP MABAR):*\n`;
     if (waitingOrders.length === 0) {
-      text += `_(Antrean kosong, slot VIP siap diisi!)_\n`;
+      text += `_(Antrean kosong, slot siap diisi sekarang!)_\n`;
     } else {
       waitingOrders.forEach((wo, idx) => {
-        text += `${idx + 1}. *${wo.username}* (${wo.role}) - ${wo.matchesRemaining} Match [${wo.paymentStatus}]\n`;
+        text += `${idx + 1}. *${wo.username}* (${wo.orderType === 'JOKI' ? 'Joki ' + wo.role : 'VIP ' + wo.role}) - ${wo.matchesRemaining} Match [${wo.paymentStatus}]\n`;
       });
     }
 
-    text += `\n💰 *DAFTAR TARIF VIP MABAR:*\n`;
+    text += `\n💰 *TARIF JOKI & VIP MABAR:*\n`;
     text += `• 1 Match: Rp 7.000\n`;
     text += `• 3 Match: Rp 21.000\n`;
     text += `• 5 Match: Rp 30.000 ⭐ _(Hemat Rp 5.000, cuma 6k/match!)_\n`;
     text += `• 10 Match: Rp 60.000 👑 _(Hemat Rp 10.000!)_\n`;
     text += `*(Berlaku kelipatan 5 match = 30.000)*\n\n`;
-    text += `📲 Mau booking slot VIP Myth, Room, atau Exp? Langsung chat Admin ya! Gas Winrate Immortal! 🔥`;
+    text += `📲 Mau titip akun joki atau ikut mabar VIP? Langsung chat Admin ya! Gas Winrate Immortal! 🔥`;
 
     navigator.clipboard.writeText(text).then(() => {
       playSound('click');
-      showToast('Format Antrean WhatsApp berhasil disalin ke Clipboard!');
+      showToast('Format WhatsApp berhasil disalin ke Clipboard!');
     }).catch(() => {
       showToast('Gagal menyalin, periksa izin browser.', 'error');
     });
@@ -386,16 +408,16 @@ export default function App() {
 
   // Export CSV
   const handleExportCSV = () => {
-    let csv = 'ID,Username,ID_Server,WhatsApp,Role,Match_Dipesan,Sisa_Match,Total_Tagihan,Nominal_Ditransfer,Metode_Bayar,Status_Bayar,Catatan_Transfer,Tanggal\n';
+    let csv = 'ID,Tipe_Layanan,Username,ID_Server,WhatsApp,Role,Catatan_Login,Match_Dipesan,Sisa_Match,Total_Tagihan,Nominal_Ditransfer,Metode_Bayar,Status_Bayar,Catatan_Transfer,Tanggal\n';
     orders.forEach(o => {
-      csv += `"${o.id}","${o.username}","${o.userId || ''}","${o.phone || ''}","${o.role}","${o.matchesOrdered}","${o.matchesRemaining}","${o.priceTotal}","${o.amountPaid}","${o.paymentMethod}","${o.paymentStatus}","${(o.transferNote || '').replace(/"/g, '""')}","${o.createdAt}"\n`;
+      csv += `"${o.id}","${o.orderType || 'VIP_MABAR'}","${o.username}","${o.userId || ''}","${o.phone || ''}","${o.role}","${(o.accountLogin || '').replace(/"/g, '""')}","${o.matchesOrdered}","${o.matchesRemaining}","${o.priceTotal}","${o.amountPaid}","${o.paymentMethod}","${o.paymentStatus}","${(o.transferNote || '').replace(/"/g, '""')}","${o.createdAt}"\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `rekap-keuangan-mlbb-vip-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `rekap-keuangan-mlbb-joki-vip-${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -407,7 +429,6 @@ export default function App() {
     const backupData = {
       orders,
       roomParty,
-      pilotsInfo,
       matchHistory,
       exportedAt: new Date().toISOString()
     };
@@ -415,7 +436,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `mlbb-vip-backup-${new Date().toISOString().slice(0, 10)}.json`);
+    link.setAttribute('download', `mlbb-vip-joki-backup-${new Date().toISOString().slice(0, 10)}.json`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -433,7 +454,6 @@ export default function App() {
         const data = JSON.parse(event.target.result);
         if (data.orders) setOrders(data.orders);
         if (data.roomParty) setRoomParty(data.roomParty);
-        if (data.pilotsInfo) setPilotsInfo(data.pilotsInfo);
         if (data.matchHistory) setMatchHistory(data.matchHistory);
         showToast('Data berhasil direstore dari backup!');
       } catch {
@@ -468,7 +488,7 @@ export default function App() {
         orders={orders}
         roomParty={roomParty}
         matchHistory={matchHistory}
-        onOpenNewOrder={() => setIsOrderModalOpen(true)}
+        onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
         onResetData={handleResetData}
         onShareWhatsApp={handleShareWhatsApp}
       />
@@ -477,19 +497,17 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'room' && (
           <div className="space-y-6">
-            {/* Live Room: 2 Pilots (Gold & Jungle) + 3 VIPs (Mid, Roam, Exp) */}
+            {/* Live Room: 2 Joki Customer Accounts + 3 VIP Mabar Customer Accounts */}
             <RoomParty
               roomParty={roomParty}
               orders={orders}
-              pilotsInfo={pilotsInfo}
-              onUpdatePilots={setPilotsInfo}
               onFillSlot={handleFillSlot}
               onRemoveFromSlot={handleRemoveFromSlot}
               onFinishMatch={handleFinishMatch}
               onTopUpOrder={(order) => setTopUpOrder(order)}
               onAutoRotate={handleAutoRotate}
               waitingOrders={waitingOrders}
-              onOpenNewOrder={() => setIsOrderModalOpen(true)}
+              onOpenNewOrder={(category) => handleOpenOrderModal(category === 'JOKI' ? 'JOKI' : 'VIP_MABAR')}
             />
 
             {/* Waiting Queue List */}
@@ -502,7 +520,7 @@ export default function App() {
               onDeleteOrder={handleDeleteOrder}
               onTopUpOrder={(order) => setTopUpOrder(order)}
               onMarkPaid={handleMarkPaid}
-              onOpenNewOrder={() => setIsOrderModalOpen(true)}
+              onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
             />
           </div>
         )}
@@ -516,7 +534,7 @@ export default function App() {
             onExportCSV={handleExportCSV}
             onExportJSON={handleExportJSON}
             onImportJSON={handleImportJSON}
-            onOpenNewOrder={() => setIsOrderModalOpen(true)}
+            onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
           />
         )}
 
@@ -535,8 +553,9 @@ export default function App() {
 
       {/* Modals */}
       <OrderModal
-        isOpen={isOrderModalOpen}
-        onClose={() => setIsOrderModalOpen(false)}
+        isOpen={orderModalConfig.isOpen}
+        defaultOrderType={orderModalConfig.defaultType}
+        onClose={() => setOrderModalConfig({ isOpen: false, defaultType: 'VIP_MABAR' })}
         onSave={handleSaveOrder}
         hasEmptySlot={hasEmptySlot}
       />
@@ -550,7 +569,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500">
-        <p>MLBB VIP Mabar Pro • 2 Pilot (Gold & Jungle) + 3 VIP (Mid, Roam, Exp) • Siap Pakai & Super Ringan</p>
+        <p>MLBB VIP & Joki Mabar Pro • 2 Akun Joki (Gold & Jungle) + 3 Akun VIP Mabar (Mid, Roam, Exp) • Siap Pakai & Super Ringan</p>
       </footer>
     </div>
   );
