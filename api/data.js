@@ -1,5 +1,11 @@
 import { put, list } from '@vercel/blob';
 
+// In-memory module cache to avoid redundant Vercel Blob Advanced Operations (list calls)
+let cachedBlobUrl = null;
+let cachedData = null;
+let lastFetchTime = 0;
+const IN_MEMORY_CACHE_TTL = 15000; // 15 seconds in-memory cache
+
 export default async function handler(req, res) {
   // CORS & Strict No-Cache headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -17,7 +23,42 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const { blobs } = await list({ prefix: DATA_KEY });
+      const now = Date.now();
+
+      // 1. Return in-memory cache if still fresh (eliminates repetitive fetches & operations)
+      if (cachedData && (now - lastFetchTime < IN_MEMORY_CACHE_TTL)) {
+        return res.status(200).json({
+          success: true,
+          exists: true,
+          data: cachedData,
+          updatedAt: cachedData.updatedAt || new Date(lastFetchTime).toISOString(),
+          cached: true
+        });
+      }
+
+      // 2. Fetch directly from known CDN URL without calling list()
+      if (cachedBlobUrl) {
+        try {
+          const fetchRes = await fetch(`${cachedBlobUrl}?t=${now}`, { cache: 'no-store' });
+          if (fetchRes.ok) {
+            const data = await fetchRes.json();
+            cachedData = data;
+            lastFetchTime = now;
+            return res.status(200).json({
+              success: true,
+              exists: true,
+              data,
+              updatedAt: data.updatedAt || new Date(lastFetchTime).toISOString()
+            });
+          }
+        } catch {
+          // If direct fetch fails, invalidate cached url and fall through to discover it
+          cachedBlobUrl = null;
+        }
+      }
+
+      // 3. Fallback: discover URL using list() ONLY if cachedBlobUrl is unknown (once per cold start)
+      const { blobs } = await list({ prefix: DATA_KEY, limit: 1 });
       if (!blobs || blobs.length === 0) {
         return res.status(200).json({
           success: true,
@@ -26,9 +67,10 @@ export default async function handler(req, res) {
         });
       }
 
-      // Fetch the latest blob content with cache busting
       const latestBlob = blobs[0];
-      const fetchRes = await fetch(`${latestBlob.url}?t=${Date.now()}`, {
+      cachedBlobUrl = latestBlob.url;
+
+      const fetchRes = await fetch(`${latestBlob.url}?t=${now}`, {
         cache: 'no-store'
       });
 
@@ -41,6 +83,9 @@ export default async function handler(req, res) {
       }
 
       const data = await fetchRes.json();
+      cachedData = data;
+      lastFetchTime = now;
+
       return res.status(200).json({
         success: true,
         exists: true,
@@ -75,10 +120,15 @@ export default async function handler(req, res) {
       const blob = await put(DATA_KEY, JSON.stringify(savePayload), {
         access: 'public',
         addRandomSuffix: false,
-        allowOverwrite: true, // Crucial fix: allow overwriting existing live db blob
+        allowOverwrite: true,
         contentType: 'application/json',
         cacheControlMaxAge: 0
       });
+
+      // Update in-memory cache immediately
+      cachedBlobUrl = blob.url;
+      cachedData = savePayload;
+      lastFetchTime = Date.now();
 
       return res.status(200).json({
         success: true,
