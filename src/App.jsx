@@ -235,13 +235,6 @@ export default function App() {
       }
     }
 
-    // Polite polling: only every 60 seconds and only when tab is actively visible
-    const intervalId = setInterval(() => {
-      if (!document.hidden) {
-        checkRemoteUpdates();
-      }
-    }, 60000);
-
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
         checkRemoteUpdates();
@@ -253,7 +246,6 @@ export default function App() {
 
     return () => {
       isCancelled = true;
-      clearInterval(intervalId);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
