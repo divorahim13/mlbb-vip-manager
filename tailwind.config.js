@@ -23,9 +23,9 @@ export default {
         }
       },
       boxShadow: {
-        'glow-gold': '0 0 20px -3px rgba(245, 158, 11, 0.35)',
-        'glow-blue': '0 0 20px -3px rgba(59, 130, 246, 0.35)',
-        'glow-emerald': '0 0 20px -3px rgba(16, 185, 129, 0.35)',
+        'glow-gold': '0 2px 10px rgba(245, 158, 11, 0.25)',
+        'glow-blue': '0 2px 10px rgba(59, 130, 246, 0.25)',
+        'glow-emerald': '0 2px 10px rgba(16, 185, 129, 0.25)',
       }
     },
   },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Header from './components/Header';
 import RoomParty, { ROLE_DETAILS, ALL_5_SLOTS } from './components/RoomParty';
 import WaitingQueue from './components/WaitingQueue';
@@ -293,10 +293,34 @@ export default function App() {
     }
   };
 
-  // Filter orders by status
-  const waitingOrders = orders.filter(o => o.status === 'WAITING');
-  const completedOrders = orders.filter(o => o.status === 'COMPLETED');
-  const hasEmptySlot = !roomParty.jokiGold || !roomParty.jokiJungle || !roomParty.mid || !roomParty.roam || !roomParty.exp;
+  // Memoized filter orders by status to prevent re-filtering on unrelated renders
+  const waitingOrders = useMemo(() => orders.filter(o => o.status === 'WAITING'), [orders]);
+  const completedOrders = useMemo(() => orders.filter(o => o.status === 'COMPLETED'), [orders]);
+  const hasEmptySlot = useMemo(() => {
+    return !roomParty.jokiGold || !roomParty.jokiJungle || !roomParty.mid || !roomParty.roam || !roomParty.exp;
+  }, [roomParty]);
+
+  // Stable handlers for modals and child components
+  const handleOpenTopUp = useCallback((order) => setTopUpOrder(order), []);
+  const handleCloseTopUp = useCallback(() => setTopUpOrder(null), []);
+  const handleOpenEdit = useCallback((order) => setEditingOrder(order), []);
+  const handleCloseEdit = useCallback(() => setEditingOrder(null), []);
+
+  const handleOpenOrderModal = useCallback((type = 'VIP_MABAR') => {
+    setOrderModalConfig({ isOpen: true, defaultType: type });
+  }, []);
+
+  const handleCloseOrderModal = useCallback(() => {
+    setOrderModalConfig(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
+  const handleOpenOrderModalVip = useCallback(() => {
+    setOrderModalConfig({ isOpen: true, defaultType: 'VIP_MABAR' });
+  }, []);
+
+  const handleOpenOrderModalCategory = useCallback((category) => {
+    setOrderModalConfig({ isOpen: true, defaultType: category === 'JOKI' ? 'JOKI' : 'VIP_MABAR' });
+  }, []);
 
   // Determine slot key from role & orderType
   const getSlotKey = (role, orderType) => {
@@ -313,11 +337,6 @@ export default function App() {
 
   const getSlotTitle = (slotKey) => {
     return ALL_5_SLOTS.find(s => s.key === slotKey)?.title || slotKey;
-  };
-
-  // Open order modal with specified default type
-  const handleOpenOrderModal = (type = 'VIP_MABAR') => {
-    setOrderModalConfig({ isOpen: true, defaultType: type });
   };
 
   // Create new order
@@ -825,12 +844,12 @@ export default function App() {
     <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col font-sans">
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
+        <div className="fixed bottom-6 right-6 z-50 gpu-layer">
           <div
-            className={`px-4 py-3 rounded-xl border shadow-2xl flex items-center gap-2.5 text-xs sm:text-sm font-bold ${
+            className={`px-4 py-3 rounded-xl border shadow-xl flex items-center gap-2.5 text-xs sm:text-sm font-bold ${
               toast.type === 'error'
                 ? 'bg-rose-950 border-rose-500 text-rose-200'
-                : 'bg-slate-900 border-amber-500 text-amber-300 shadow-glow-gold'
+                : 'bg-slate-900 border-amber-500 text-amber-300 shadow-md'
             }`}
           >
             {toast.type === 'error' ? <AlertCircle className="w-4 h-4 text-rose-400" /> : <Check className="w-4 h-4 text-emerald-400" />}
@@ -846,7 +865,7 @@ export default function App() {
         orders={orders}
         roomParty={roomParty}
         matchHistory={matchHistory}
-        onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
+        onOpenNewOrder={handleOpenOrderModalVip}
         onResetData={handleResetData}
         onShareWhatsApp={handleShareWhatsApp}
         cloudStatus={cloudStatus}
@@ -855,9 +874,9 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
         {activeTab === 'room' && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             {/* Live Room: 2 Joki Customer Accounts + 3 VIP Mabar Customer Accounts */}
             <RoomParty
               roomParty={roomParty}
@@ -865,11 +884,11 @@ export default function App() {
               onFillSlot={handleFillSlot}
               onRemoveFromSlot={handleRemoveFromSlot}
               onFinishMatch={handleFinishMatch}
-              onTopUpOrder={(order) => setTopUpOrder(order)}
-              onEditOrder={(order) => setEditingOrder(order)}
+              onTopUpOrder={handleOpenTopUp}
+              onEditOrder={handleOpenEdit}
               onAutoRotate={handleAutoRotate}
               waitingOrders={waitingOrders}
-              onOpenNewOrder={(category) => handleOpenOrderModal(category === 'JOKI' ? 'JOKI' : 'VIP_MABAR')}
+              onOpenNewOrder={handleOpenOrderModalCategory}
             />
 
             {/* Waiting Queue List */}
@@ -880,10 +899,10 @@ export default function App() {
               onFillNextSlot={handleFillNextSlot}
               onMoveOrder={handleMoveOrder}
               onDeleteOrder={handleDeleteOrder}
-              onTopUpOrder={(order) => setTopUpOrder(order)}
-              onEditOrder={(order) => setEditingOrder(order)}
+              onTopUpOrder={handleOpenTopUp}
+              onEditOrder={handleOpenEdit}
               onMarkPaid={handleMarkPaid}
-              onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
+              onOpenNewOrder={handleOpenOrderModalVip}
             />
           </div>
         )}
@@ -892,13 +911,13 @@ export default function App() {
           <FinancialView
             orders={orders}
             onMarkPaid={handleMarkPaid}
-            onTopUpOrder={(order) => setTopUpOrder(order)}
-            onEditOrder={(order) => setEditingOrder(order)}
+            onTopUpOrder={handleOpenTopUp}
+            onEditOrder={handleOpenEdit}
             onDeleteOrder={handleDeleteOrder}
             onExportCSV={handleExportCSV}
             onExportJSON={handleExportJSON}
             onImportJSON={handleImportJSON}
-            onOpenNewOrder={() => handleOpenOrderModal('VIP_MABAR')}
+            onOpenNewOrder={handleOpenOrderModalVip}
           />
         )}
 
@@ -920,7 +939,7 @@ export default function App() {
       <OrderModal
         isOpen={orderModalConfig.isOpen}
         defaultOrderType={orderModalConfig.defaultType}
-        onClose={() => setOrderModalConfig({ isOpen: false, defaultType: 'VIP_MABAR' })}
+        onClose={handleCloseOrderModal}
         onSave={handleSaveOrder}
         hasEmptySlot={hasEmptySlot}
       />
@@ -928,14 +947,14 @@ export default function App() {
       <TopUpModal
         isOpen={!!topUpOrder}
         order={topUpOrder}
-        onClose={() => setTopUpOrder(null)}
+        onClose={handleCloseTopUp}
         onConfirm={handleTopUpConfirm}
       />
 
       <EditOrderModal
         isOpen={!!editingOrder}
         order={editingOrder}
-        onClose={() => setEditingOrder(null)}
+        onClose={handleCloseEdit}
         onSave={handleSaveEditOrder}
       />
 

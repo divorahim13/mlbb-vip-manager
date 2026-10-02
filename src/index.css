@@ -6,44 +6,51 @@
   color-scheme: dark;
 }
 
-body {
+html, body {
   margin: 0;
   background-color: #070a12;
   color: #f1f5f9;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   overflow-x: hidden;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeSpeed;
 }
 
-/* Custom scrollbar */
+/* Custom Lightweight Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0f19;
+  background: #070a12;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
 
-/* Pulse glow animations */
-@keyframes goldPulse {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 25px rgba(245, 158, 11, 0.7);
-  }
+/* GPU Hardware Acceleration & Compositor Layer Hints */
+.gpu-layer {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, opacity;
 }
 
-.animate-glow-gold {
-  animation: goldPulse 2s infinite;
+/* Content Visibility Optimization (Skips offscreen layout & paint calculations) */
+.perf-contain {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 76px;
+}
+
+/* Smooth Interactive Transitions with zero layout shift */
+button, a, input, select {
+  touch-action: manipulation;
 }

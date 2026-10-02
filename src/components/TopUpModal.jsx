@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { calculatePricing, formatRupiah } from '../utils/pricing';
 import { PlusCircle, Sparkles, DollarSign, Heart, Tag, Plus, Minus } from 'lucide-react';
 
-export default function TopUpModal({ isOpen, order, onClose, onConfirm }) {
+function TopUpModal({ isOpen, order, onClose, onConfirm }) {
   if (!isOpen || !order) return null;
 
   const [addMatches, setAddMatches] = useState(5);
@@ -45,7 +45,7 @@ export default function TopUpModal({ isOpen, order, onClose, onConfirm }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 gpu-layer">
       <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-md w-full p-5 shadow-2xl relative max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
@@ -216,3 +216,5 @@ export default function TopUpModal({ isOpen, order, onClose, onConfirm }) {
     </div>
   );
 }
+
+export default React.memo(TopUpModal);

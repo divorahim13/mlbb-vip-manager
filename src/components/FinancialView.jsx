@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { formatRupiah } from '../utils/pricing';
 import { DollarSign, Search, Filter, Download, Upload, CheckCircle, AlertTriangle, FileSpreadsheet, Trash2, PlusCircle, CreditCard, Inbox, Gamepad2, Heart, Edit3 } from 'lucide-react';
 
-export default function FinancialView({
+function FinancialView({
   orders,
   onMarkPaid,
   onTopUpOrder,
@@ -18,53 +18,66 @@ export default function FinancialView({
   const [methodFilter, setMethodFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'JOKI' | 'VIP_MABAR'
 
-  // Financial calculations
-  const totalRevenue = useMemo(() => {
-    return orders.reduce((sum, o) => sum + (Number(o.amountPaid) || 0), 0);
-  }, [orders]);
+  // Single-pass financial calculations (O(N) instead of 7x O(N))
+  const {
+    totalRevenue,
+    totalBilled,
+    totalOutstanding,
+    totalMatchesOrdered,
+    jokiRevenue,
+    vipRevenue,
+    freeOrdersCount,
+    methodBreakdown
+  } = useMemo(() => {
+    let rev = 0;
+    let billed = 0;
+    let out = 0;
+    let matches = 0;
+    let jokiRev = 0;
+    let vipRev = 0;
+    let freeCount = 0;
+    const methods = {};
 
-  const totalBilled = useMemo(() => {
-    return orders.reduce((sum, o) => sum + (Number(o.priceTotal) || 0), 0);
-  }, [orders]);
+    for (let i = 0; i < orders.length; i++) {
+      const o = orders[i];
+      const paid = Number(o.amountPaid) || 0;
+      const price = Number(o.priceTotal) || 0;
+      const isFree = o.paymentStatus === 'GRATIS' || o.isFree;
+      const isJoki = o.orderType === 'JOKI';
 
-  // Kurang Bayar (Piutang) excluding GRATIS orders
-  const totalOutstanding = useMemo(() => {
-    return orders.reduce((sum, o) => {
-      if (o.paymentStatus === 'GRATIS' || o.isFree) return sum;
-      return sum + Math.max(0, (Number(o.priceTotal) || 0) - (Number(o.amountPaid) || 0));
-    }, 0);
-  }, [orders]);
-
-  const totalMatchesOrdered = useMemo(() => {
-    return orders.reduce((sum, o) => sum + (Number(o.matchesOrdered) || 0), 0);
-  }, [orders]);
-
-  // Joki revenue vs VIP revenue
-  const jokiRevenue = useMemo(() => {
-    return orders.filter(o => o.orderType === 'JOKI').reduce((sum, o) => sum + (Number(o.amountPaid) || 0), 0);
-  }, [orders]);
-
-  const vipRevenue = useMemo(() => {
-    return orders.filter(o => o.orderType !== 'JOKI').reduce((sum, o) => sum + (Number(o.amountPaid) || 0), 0);
-  }, [orders]);
-
-  // Free / Pacar orders count
-  const freeOrdersCount = useMemo(() => {
-    return orders.filter(o => o.paymentStatus === 'GRATIS' || o.isFree).length;
-  }, [orders]);
-
-  // Breakdown by payment method
-  const methodBreakdown = useMemo(() => {
-    const acc = {};
-    orders.forEach(o => {
-      const m = o.paymentMethod || 'Lainnya';
-      if (!acc[m]) {
-        acc[m] = { count: 0, amount: 0 };
+      rev += paid;
+      billed += price;
+      if (!isFree) {
+        out += Math.max(0, price - paid);
+      } else {
+        freeCount++;
       }
-      acc[m].count += 1;
-      acc[m].amount += (Number(o.amountPaid) || 0);
-    });
-    return acc;
+      matches += Number(o.matchesOrdered) || 0;
+
+      if (isJoki) {
+        jokiRev += paid;
+      } else {
+        vipRev += paid;
+      }
+
+      const m = o.paymentMethod || 'Lainnya';
+      if (!methods[m]) {
+        methods[m] = { count: 0, amount: 0 };
+      }
+      methods[m].count++;
+      methods[m].amount += paid;
+    }
+
+    return {
+      totalRevenue: rev,
+      totalBilled: billed,
+      totalOutstanding: out,
+      totalMatchesOrdered: matches,
+      jokiRevenue: jokiRev,
+      vipRevenue: vipRev,
+      freeOrdersCount: freeCount,
+      methodBreakdown: methods
+    };
   }, [orders]);
 
   const methodEntries = Object.entries(methodBreakdown);
@@ -427,3 +440,5 @@ export default function FinancialView({
     </div>
   );
 }
+
+export default React.memo(FinancialView);

@@ -28,7 +28,7 @@ export const VIP_MABAR_ROLES = [
   { value: 'Any', label: 'Bebas (Mid / Roam / Exp) 🎮', icon: '🎮' }
 ];
 
-export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 'VIP_MABAR' }) {
+function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 'VIP_MABAR' }) {
   const [orderType, setOrderType] = useState(defaultOrderType); // 'JOKI' | 'VIP_MABAR'
   const [username, setUsername] = useState('');
   const [userId, setUserId] = useState('');
@@ -126,7 +126,7 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 overflow-y-auto gpu-layer">
       <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative my-8 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -582,3 +582,5 @@ export default function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defa
     </div>
   );
 }
+
+export default React.memo(OrderModal);

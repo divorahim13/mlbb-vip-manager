@@ -1,12 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Zap, Plus, CheckCircle, ShieldAlert, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
+import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Plus, CheckCircle, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
-import { ROLE_DETAILS } from './RoomParty';
 
-export default function WaitingQueue({
-  waitingOrders,
-  completedOrders,
-  roomParty,
+function WaitingQueue({
+  waitingOrders = [],
+  completedOrders = [],
+  roomParty = {},
   onFillNextSlot,
   onMoveOrder,
   onDeleteOrder,
@@ -48,16 +47,16 @@ export default function WaitingQueue({
   };
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl">
+    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
       {/* Header & Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-800">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-amber-400 font-extrabold text-sm uppercase tracking-wider flex items-center gap-1.5">
-              <Clock className="w-4 h-4" /> Antrean Mabar & Joki
+            <span className="text-amber-400 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5" /> Antrean Mabar & Joki
             </span>
           </div>
-          <h3 className="text-lg font-black text-white mt-0.5">
+          <h3 className="text-base sm:text-lg font-black text-white mt-0.5">
             Daftar Antrean Customer (Joki & VIP Mabar)
           </h3>
           <p className="text-xs text-slate-400">
@@ -70,17 +69,17 @@ export default function WaitingQueue({
           <div className="bg-slate-950 p-1 rounded-xl border border-slate-800 flex text-xs font-bold">
             <button
               onClick={() => setActiveTab('waiting')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1 rounded-lg transition-colors ${
                 activeTab === 'waiting'
                   ? 'bg-amber-500 text-slate-950 font-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Menunggu ({waitingOrders.length})
+              Antrean Menunggu ({waitingOrders.length})
             </button>
             <button
               onClick={() => setActiveTab('completed')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
+              className={`px-3 py-1 rounded-lg transition-colors ${
                 activeTab === 'completed'
                   ? 'bg-slate-800 text-white font-bold shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -90,112 +89,107 @@ export default function WaitingQueue({
             </button>
           </div>
 
+          {/* Quick Add Order Button */}
           <button
-            onClick={() => onOpenNewOrder()}
-            className="flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold px-3 py-2 rounded-xl transition-all"
+            onClick={onOpenNewOrder}
+            className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Antrean</span>
+            <span>+ Tambah Antrean</span>
           </button>
         </div>
       </div>
 
-      {/* Sub-filter: Semua vs Joki vs VIP Mabar */}
-      {activeTab === 'waiting' && waitingOrders.length > 0 && (
-        <div className="flex items-center gap-2 pt-3 pb-1">
-          <span className="text-[11px] text-slate-400 font-semibold">Filter:</span>
-          <button
-            onClick={() => setFilterType('ALL')}
-            className={`text-xs px-2.5 py-1 rounded-lg font-bold transition-all ${
-              filterType === 'ALL'
-                ? 'bg-slate-800 text-amber-300 border border-slate-700'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Semua ({waitingOrders.length})
-          </button>
-          <button
-            onClick={() => setFilterType('JOKI')}
-            className={`text-xs px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all ${
-              filterType === 'JOKI'
-                ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Gamepad2 className="w-3.5 h-3.5" />
-            <span>Joki Akun ({waitingOrders.filter(o => o.orderType === 'JOKI').length})</span>
-          </button>
-          <button
-            onClick={() => setFilterType('VIP_MABAR')}
-            className={`text-xs px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all ${
-              filterType === 'VIP_MABAR'
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>🌟 VIP Mabar ({waitingOrders.filter(o => o.orderType !== 'JOKI').length})</span>
-          </button>
+      {/* Filter by Type (All / Joki / VIP Mabar) */}
+      {activeTab === 'waiting' && (
+        <div className="flex items-center justify-between gap-2 mt-3 pt-1 pb-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs font-semibold">
+            <span className="text-slate-400 text-[11px] mr-1">Filter Kategori:</span>
+            <button
+              onClick={() => setFilterType('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                filterType === 'ALL'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-white'
+              }`}
+            >
+              Semua ({waitingOrders.length})
+            </button>
+            <button
+              onClick={() => setFilterType('JOKI')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                filterType === 'JOKI'
+                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                  : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-white'
+              }`}
+            >
+              🎮 Akun Joki ({waitingOrders.filter(o => o.orderType === 'JOKI').length})
+            </button>
+            <button
+              onClick={() => setFilterType('VIP_MABAR')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                filterType === 'VIP_MABAR'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                  : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-white'
+              }`}
+            >
+              🌟 VIP Mabar ({waitingOrders.filter(o => o.orderType !== 'JOKI').length})
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-400">
+            Total Antrean: <strong className="text-white">{displayWaitingOrders.length} Akun</strong>
+          </div>
         </div>
       )}
 
-      {/* Content based on tab */}
+      {/* Content based on Active Tab */}
       {activeTab === 'waiting' ? (
-        <div className="mt-4">
+        <div className="mt-3">
           {displayWaitingOrders.length === 0 ? (
-            <div className="text-center py-12 px-4 border border-dashed border-slate-800 rounded-xl bg-slate-950/40">
-              <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
-                <Clock className="w-6 h-6 text-slate-400" />
-              </div>
-              <h4 className="text-sm font-bold text-white">Tidak ada antrean aktif</h4>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Semua akun customer sudah berada di dalam room atau belum ada pendaftaran baru.
+            <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl bg-slate-950/40">
+              <Clock className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-300">Belum Ada Antrean Menunggu</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                Customer baru yang mendaftar mabar VIP atau akun joki akan otomatis masuk ke daftar antrean ini.
               </p>
               <button
-                onClick={() => onOpenNewOrder()}
-                className="mt-4 inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs transition-all shadow-glow-gold"
+                onClick={onOpenNewOrder}
+                className="mt-3 inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-lg text-xs transition-transform active:scale-95 shadow-sm"
               >
-                <Plus className="w-4 h-4" />
-                <span>Input Pesanan Baru (Joki / Mabar)</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah Pesanan Baru</span>
               </button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {displayWaitingOrders.map((order, index) => {
                 const isFirst = index === 0;
                 const isLast = index === displayWaitingOrders.length - 1;
                 const isJoki = order.orderType === 'JOKI';
-                const roleMeta = ROLE_DETAILS[order.role] || { label: order.role, icon: '🎮' };
                 const slotBtnText = getSlotButtonLabel(order);
 
                 return (
                   <div
                     key={order.id}
-                    className={`rounded-xl p-3.5 border transition-all ${
+                    className={`rounded-xl p-3 sm:p-3.5 border transition-colors perf-contain ${
                       isFirst
-                        ? 'bg-gradient-to-r from-amber-500/10 via-slate-900 to-slate-950 border-amber-500/50 shadow-glow-gold'
-                        : isJoki
-                        ? 'bg-slate-950/90 border-blue-900/40 hover:border-blue-700/60'
-                        : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                        ? 'bg-slate-950/90 border-amber-500/50 shadow-sm'
+                        : 'bg-slate-950/70 border-slate-800/90 hover:border-slate-700'
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      {/* Left: Queue Number & Player info */}
+                      {/* Left: Queue Number & Customer Details */}
                       <div className="flex items-center gap-3 min-w-0">
-                        {/* Queue Position Badge */}
                         <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${
+                          className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${
                             isFirst
-                              ? 'bg-amber-500 text-slate-950 shadow-md ring-2 ring-amber-400/40'
-                              : 'bg-slate-800 text-slate-300'
+                              ? 'bg-amber-500 text-slate-950 shadow-sm'
+                              : 'bg-slate-800 text-slate-300 border border-slate-700'
                           }`}
                         >
                           #{index + 1}
                         </div>
-
-                        {/* Role Icon */}
-                        <span className="text-2xl shrink-0" title={order.role}>
-                          {roleMeta.icon}
-                        </span>
 
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -215,7 +209,7 @@ export default function WaitingQueue({
                             </span>
 
                             {isFirst && (
-                              <span className="text-[10px] bg-amber-500 text-slate-950 font-black px-2 py-0.5 rounded-full uppercase">
+                              <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-2 py-0.2 rounded-full uppercase">
                                 SIAP MASUK
                               </span>
                             )}
@@ -244,7 +238,7 @@ export default function WaitingQueue({
                       </div>
 
                       {/* Middle: Matches & Payment Info */}
-                      <div className="flex items-center gap-3 sm:gap-4 shrink-0 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800/80">
+                      <div className="flex items-center gap-3 sm:gap-4 shrink-0 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800">
                         {/* Matches */}
                         <div className="text-left">
                           <div className="text-[10px] text-slate-400 font-semibold">Paket Match</div>
@@ -298,22 +292,22 @@ export default function WaitingQueue({
                         {/* Masukkan ke Room */}
                         <button
                           onClick={() => onFillNextSlot(order.id)}
-                          className={`flex items-center gap-1.5 font-black text-xs px-3 py-2 rounded-lg transition-all ${
+                          className={`flex items-center gap-1.5 font-black text-xs px-3 py-1.5 rounded-lg transition-transform active:scale-95 shadow-sm ${
                             isJoki
-                              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-glow-blue'
-                              : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-glow-gold'
+                              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white'
+                              : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950'
                           }`}
                         >
                           <UserCheck className="w-3.5 h-3.5" />
                           <span>{slotBtnText}</span>
                         </button>
 
-                        {/* If DP or Belum Bayar, Quick Pelunasan button */}
+                        {/* Quick Pelunasan button if not paid / not free */}
                         {order.paymentStatus !== 'LUNAS' && order.paymentStatus !== 'GRATIS' && (
                           <button
                             onClick={() => onMarkPaid(order.id)}
                             title="Tandai Pembayaran Lunas"
-                            className="bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/40 p-2 rounded-lg text-xs"
+                            className="bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/40 p-1.5 rounded-lg text-xs transition-colors"
                           >
                             <DollarSign className="w-3.5 h-3.5" />
                           </button>
@@ -323,7 +317,7 @@ export default function WaitingQueue({
                         <button
                           onClick={() => onTopUpOrder(order)}
                           title="Tambah Match (Top Up)"
-                          className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/20 text-xs transition-colors"
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/20 text-xs transition-colors"
                         >
                           <Plus className="w-3.5 h-3.5" />
                         </button>
@@ -332,7 +326,7 @@ export default function WaitingQueue({
                         <button
                           onClick={() => onEditOrder(order)}
                           title="Edit Data Customer"
-                          className="p-2 rounded-lg bg-slate-800 hover:bg-blue-900/60 text-blue-300 border border-blue-500/30 text-xs transition-colors"
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-900/60 text-blue-300 border border-blue-500/30 text-xs transition-colors"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
@@ -341,7 +335,7 @@ export default function WaitingQueue({
                         <button
                           onClick={() => onDeleteOrder(order.id)}
                           title="Hapus dari antrean"
-                          className="p-2 rounded-lg bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 text-xs transition-colors"
+                          className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 text-xs transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -355,7 +349,7 @@ export default function WaitingQueue({
         </div>
       ) : (
         /* Completed Orders List */
-        <div className="mt-4">
+        <div className="mt-3">
           {completedOrders.length === 0 ? (
             <p className="text-center py-8 text-xs text-slate-400">
               Belum ada riwayat pemain yang selesai mabar / joki.
@@ -365,7 +359,7 @@ export default function WaitingQueue({
               {completedOrders.map((co) => (
                 <div
                   key={co.id}
-                  className="bg-slate-950/50 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between gap-3 text-xs opacity-80 hover:opacity-100 transition-opacity"
+                  className="bg-slate-950/50 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between gap-3 text-xs opacity-80 hover:opacity-100 transition-opacity perf-contain"
                 >
                   <div className="flex items-center gap-2.5">
                     <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -385,7 +379,7 @@ export default function WaitingQueue({
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => onTopUpOrder(co)}
-                      className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2.5 py-1 rounded-md"
+                      className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2 py-1 rounded-md transition-colors"
                     >
                       Order Lagi (+Match)
                     </button>
@@ -398,7 +392,7 @@ export default function WaitingQueue({
                     </button>
                     <button
                       onClick={() => onDeleteOrder(co.id)}
-                      className="text-slate-400 hover:text-rose-400 p-1"
+                      className="text-slate-400 hover:text-rose-400 p-1 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -412,3 +406,5 @@ export default function WaitingQueue({
     </div>
   );
 }
+
+export default React.memo(WaitingQueue);

@@ -17,7 +17,7 @@ const PAYMENT_METHODS = [
   'Cash / Tunai'
 ];
 
-export default function EditOrderModal({ isOpen, order, onClose, onSave }) {
+function EditOrderModal({ isOpen, order, onClose, onSave }) {
   if (!isOpen || !order) return null;
 
   const [orderType, setOrderType] = useState(order.orderType || 'VIP_MABAR');
@@ -126,7 +126,7 @@ export default function EditOrderModal({ isOpen, order, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 overflow-y-auto gpu-layer">
       <div className="bg-slate-900 border border-blue-500/50 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative my-8 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -453,3 +453,5 @@ export default function EditOrderModal({ isOpen, order, onClose, onSave }) {
     </div>
   );
 }
+
+export default React.memo(EditOrderModal);

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Crown, Shield, User, UserPlus, Play, CheckCircle2, XCircle, ArrowRightLeft, Sparkles, AlertCircle, Copy, Check, Plus, Swords, Zap, Heart, Wand2, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Crown, Shield, User, UserPlus, CheckCircle2, XCircle, ArrowRightLeft, Sparkles, AlertCircle, Copy, Check, Plus, Swords, Zap, Heart, Wand2, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
 
 export const ROLE_DETAILS = {
@@ -64,39 +64,50 @@ export const ALL_5_SLOTS = [
   }
 ];
 
-export default function RoomParty({
-  roomParty,
-  orders,
+function RoomParty({
+  roomParty = {},
+  orders = [],
   onFillSlot,
   onRemoveFromSlot,
   onFinishMatch,
   onTopUpOrder,
   onEditOrder,
   onAutoRotate,
-  waitingOrders,
+  waitingOrders = [],
   onOpenNewOrder
 }) {
   const [slotPicker, setSlotPicker] = useState(null); // 'jokiGold' | 'jokiJungle' | 'mid' | 'roam' | 'exp'
 
-  // Map orders to all 5 slots
-  const slotOrders = {
-    jokiGold: orders.find(o => o.id === roomParty.jokiGold),
-    jokiJungle: orders.find(o => o.id === roomParty.jokiJungle),
-    mid: orders.find(o => o.id === roomParty.mid),
-    roam: orders.find(o => o.id === roomParty.roam),
-    exp: orders.find(o => o.id === roomParty.exp),
-  };
+  // Fast O(1) hash map lookup for slot orders
+  const slotOrders = useMemo(() => {
+    const orderMap = new Map();
+    for (let i = 0; i < orders.length; i++) {
+      orderMap.set(orders[i].id, orders[i]);
+    }
+    return {
+      jokiGold: orderMap.get(roomParty.jokiGold) || null,
+      jokiJungle: orderMap.get(roomParty.jokiJungle) || null,
+      mid: orderMap.get(roomParty.mid) || null,
+      roam: orderMap.get(roomParty.roam) || null,
+      exp: orderMap.get(roomParty.exp) || null,
+    };
+  }, [orders, roomParty]);
 
-  const occupiedCount = Object.values(slotOrders).filter(Boolean).length;
-  const expiredPlayers = Object.entries(slotOrders)
-    .filter(([_, order]) => order && order.matchesRemaining <= 0)
-    .map(([slotKey, order]) => ({ slotKey, order }));
+  const occupiedCount = useMemo(() => {
+    return Object.values(slotOrders).filter(Boolean).length;
+  }, [slotOrders]);
+
+  const expiredPlayers = useMemo(() => {
+    return Object.entries(slotOrders)
+      .filter(([_, order]) => order && order.matchesRemaining <= 0)
+      .map(([slotKey, order]) => ({ slotKey, order }));
+  }, [slotOrders]);
 
   return (
     <div className="space-y-6">
       {/* Alert if any account in room has 0 matches remaining */}
       {expiredPlayers.length > 0 && (
-        <div className="bg-amber-500/10 border-2 border-amber-500/60 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-glow-gold animate-pulse">
+        <div className="bg-amber-500/10 border-2 border-amber-500/70 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
               <AlertCircle className="w-6 h-6" />
@@ -114,14 +125,14 @@ export default function RoomParty({
             {waitingOrders.length > 0 && (
               <button
                 onClick={() => onAutoRotate(expiredPlayers[0].slotKey)}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-lg text-xs transition-all shadow-md"
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-lg text-xs transition-colors shadow-sm"
               >
                 🔄 Gantikan dengan Antrean #{waitingOrders[0]?.username}
               </button>
             )}
             <button
               onClick={() => onTopUpOrder(expiredPlayers[0].order)}
-              className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-bold px-3 py-2 rounded-lg text-xs"
+              className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-bold px-3 py-2 rounded-lg text-xs transition-colors"
             >
               + Top Up Match
             </button>
@@ -130,12 +141,8 @@ export default function RoomParty({
       )}
 
       {/* Main Room Lobby Header & Action Center */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl relative overflow-hidden">
-        {/* Glow */}
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-800/80 pb-5">
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg relative">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-800/80 pb-4">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-400 text-xs font-black tracking-wide border border-amber-500/40">
@@ -151,7 +158,7 @@ export default function RoomParty({
                 Total Akun Terisi: <strong className="text-white">{occupiedCount} / 5 Slot</strong>
               </span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-white mt-1.5 tracking-tight">
+            <h2 className="text-lg sm:text-xl font-black text-white mt-1 tracking-tight">
               Party Mabar & Joki Mobile Legends
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -164,7 +171,7 @@ export default function RoomParty({
             <button
               onClick={() => onFinishMatch('WIN')}
               disabled={occupiedCount === 0}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-30 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-glow-emerald transition-all transform active:scale-95"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:opacity-30 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-sm transition-transform active:scale-95"
             >
               <CheckCircle2 className="w-4 h-4" />
               <span>Selesai 1 Match (VICTORY 🏆)</span>
@@ -173,7 +180,7 @@ export default function RoomParty({
             <button
               onClick={() => onFinishMatch('LOSE')}
               disabled={occupiedCount === 0}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-rose-700 to-red-600 hover:from-rose-600 hover:to-red-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all transform active:scale-95"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-gradient-to-r from-rose-700 to-red-600 hover:from-rose-600 hover:to-red-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-extrabold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm shadow-sm transition-transform active:scale-95"
             >
               <XCircle className="w-4 h-4" />
               <span>Selesai 1 Match (DEFEAT 💀)</span>
@@ -182,7 +189,7 @@ export default function RoomParty({
         </div>
 
         {/* 5-Slot Grid: 2 Joki + 3 VIP Mabar */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3.5 mt-5">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3.5 mt-4">
           {ALL_5_SLOTS.map((slotDef) => {
             const slotKey = slotDef.key;
             const order = slotOrders[slotKey];
@@ -196,12 +203,12 @@ export default function RoomParty({
               return (
                 <div
                   key={slotKey}
-                  className={`relative rounded-xl p-3.5 flex flex-col justify-between border-2 transition-all ${
+                  className={`relative rounded-xl p-3 flex flex-col justify-between border-2 transition-colors ${
                     isExpired
-                      ? 'bg-rose-950/20 border-rose-500/70 shadow-glow-rose'
+                      ? 'bg-rose-950/20 border-rose-500/70 shadow-sm'
                       : isJoki
-                      ? 'bg-gradient-to-b from-blue-500/10 via-slate-950 to-slate-950 border-blue-500/40 shadow-md'
-                      : 'bg-slate-950/80 border-slate-700/80 hover:border-amber-400/60 shadow-md'
+                      ? 'bg-slate-950/90 border-blue-500/40 shadow-sm'
+                      : 'bg-slate-950/90 border-slate-700/80 hover:border-amber-400/60 shadow-sm'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -221,7 +228,7 @@ export default function RoomParty({
                     </span>
                   </div>
 
-                  <div className="my-2.5">
+                  <div className="my-2">
                     <div className="text-[10px] text-amber-400 font-bold mb-1 flex items-center gap-1">
                       <span>{slotDef.icon}</span>
                       <span>{slotDef.pilotTitle}</span>
@@ -240,64 +247,63 @@ export default function RoomParty({
 
                     {/* Catatan login jika ada */}
                     {order.accountLogin && (
-                      <div className="bg-slate-900/90 border border-blue-500/30 rounded px-2 py-1 my-1 text-[10px] text-blue-300 truncate" title={order.accountLogin}>
+                      <div className="bg-slate-900/90 border border-blue-500/30 rounded px-2 py-0.5 my-1 text-[10px] text-blue-300 truncate" title={order.accountLogin}>
                         🔑 {order.accountLogin}
                       </div>
                     )}
 
                     {/* Match Quota Visual Progress */}
-                    <div className="bg-slate-900 border border-slate-800 rounded-lg p-2 mt-2">
+                    <div className="bg-slate-900 border border-slate-800 rounded-lg p-2 mt-1.5">
                       <div className="flex items-center justify-between text-[11px] font-bold mb-1">
                         <span className="text-slate-400">Sisa Match:</span>
-                        <span className={isExpired ? 'text-rose-400 font-black' : 'text-amber-400 font-black'}>
-                          {order.matchesRemaining} / {order.matchesOrdered} Match
+                        <span className={`text-xs font-black ${isExpired ? 'text-rose-400 font-extrabold' : 'text-amber-400'}`}>
+                          {order.matchesRemaining} / {order.matchesOrdered}
                         </span>
                       </div>
-                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                         <div
-                          className={`h-full transition-all duration-500 ${
-                            isExpired ? 'bg-rose-500' : 'bg-gradient-to-r from-amber-500 to-yellow-300'
+                          className={`h-full transition-all duration-300 ${
+                            isExpired
+                              ? 'bg-rose-500'
+                              : isJoki
+                              ? 'bg-blue-500'
+                              : 'bg-amber-400'
                           }`}
                           style={{ width: `${progressPct}%` }}
                         />
                       </div>
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1">
-                        <span>Main: {playedMatches}x</span>
-                        <span className="text-slate-300">{formatRupiah(order.amountPaid)}</span>
-                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{order.paymentMethod}</span>
+                      <span className="font-bold text-slate-300">{formatRupiah(order.amountPaid)}</span>
                     </div>
                   </div>
 
-                  {/* Slot Actions */}
-                  <div className="flex flex-col gap-1.5 pt-1 border-t border-slate-800/80">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => onTopUpOrder(order)}
-                        className="flex-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold py-1 rounded transition-colors"
-                      >
-                        + Top Up
-                      </button>
-                      <button
-                        onClick={() => onEditOrder(order)}
-                        title="Edit data akun / sisa match"
-                        className="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[10px] font-bold px-2 py-1 rounded transition-colors flex items-center gap-1"
-                      >
-                        <Edit3 className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        onClick={() => setSlotPicker(slotKey)}
-                        title="Ganti dengan akun lain dari antrean"
-                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] p-1 rounded transition-colors flex items-center justify-center"
-                      >
-                        <ArrowRightLeft className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                  {/* Actions for this slot */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center gap-1.5">
+                    <button
+                      onClick={() => onTopUpOrder(order)}
+                      title="Tambah / Top Up Match Customer Ini"
+                      className="flex-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold py-1 px-1 rounded transition-colors text-center"
+                    >
+                      + Top Up
+                    </button>
+
+                    <button
+                      onClick={() => onEditOrder(order)}
+                      title="Edit Data Pesanan Akun Ini"
+                      className="bg-blue-900/40 hover:bg-blue-800/60 text-blue-300 border border-blue-600/40 p-1 rounded transition-colors"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                    </button>
+
                     <button
                       onClick={() => onRemoveFromSlot(slotKey)}
-                      className="w-full bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 text-[10px] py-1 rounded transition-colors"
+                      title="Keluarkan dari Slot ke Antrean"
+                      className="bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 p-1 rounded transition-colors"
                     >
-                      Keluarkan ke Antrean
+                      <XCircle className="w-3 h-3" />
                     </button>
                   </div>
                 </div>
@@ -305,56 +311,54 @@ export default function RoomParty({
             }
 
             // Empty Slot State
-            const matchingQueue = waitingOrders.filter(
-              wo => wo.role === slotDef.role || (wo.orderType === slotDef.category && wo.role === 'Any')
-            );
-            const bestCandidate = matchingQueue[0] || (isJoki ? null : waitingOrders[0]);
-
             return (
               <div
                 key={slotKey}
-                className="border-2 border-dashed border-slate-800/80 hover:border-slate-700 bg-slate-950/40 rounded-xl p-3.5 flex flex-col items-center justify-center text-center min-h-[240px] transition-colors"
+                className="rounded-xl p-3 flex flex-col justify-between border-2 border-dashed border-slate-800 bg-slate-950/40 hover:border-slate-700 transition-colors min-h-[220px]"
               >
-                <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-xl mb-1.5 shadow-sm">
-                  {slotDef.icon}
-                </div>
-                <span className="text-[10px] font-black uppercase text-amber-400">
-                  {slotDef.title}
-                </span>
-                <span className="text-[10px] text-blue-300 font-semibold mb-2">
-                  ({slotDef.pilotTitle})
-                </span>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${slotDef.headerBg}`}>
+                      {isJoki ? `🎮 JOKI • ${slotDef.role}` : `🌟 VIP • ${slotDef.role}`}
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-bold uppercase">
+                      KOSONG
+                    </span>
+                  </div>
 
-                {bestCandidate ? (
-                  <>
-                    <p className="text-[10px] text-slate-400 mb-2">
-                      {matchingQueue.length > 0
-                        ? `${matchingQueue.length} antrean ${slotDef.role} menunggu`
-                        : `${waitingOrders.length} antrean menunggu`}
-                    </p>
+                  <div className="my-5 text-center">
+                    <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-lg mx-auto mb-1.5 shadow-sm">
+                      {slotDef.icon}
+                    </div>
+                    <div className="text-xs font-bold text-white mb-0.5">{slotDef.title}</div>
+                    <div className="text-[10px] text-amber-400 font-semibold">{slotDef.pilotTitle}</div>
+                  </div>
+                </div>
+
+                {waitingOrders.length > 0 ? (
+                  <div className="space-y-1.5">
                     <button
-                      onClick={() => onFillSlot(slotKey, bestCandidate.id)}
-                      className="w-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
+                      onClick={() => setSlotPicker(slotKey)}
+                      className="w-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-sm"
                     >
-                      <span>Masuk #{bestCandidate.username}</span>
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Pilih dari Antrean</span>
                     </button>
-                    {waitingOrders.length > 1 && (
-                      <button
-                        onClick={() => setSlotPicker(slotKey)}
-                        className="text-[10px] text-slate-400 hover:text-white mt-2 underline"
-                      >
-                        Pilih akun lain ({waitingOrders.length})
-                      </button>
-                    )}
-                  </>
+                    <button
+                      onClick={() => onOpenNewOrder(slotDef.category)}
+                      className="w-full bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 text-[10px] font-bold py-1 px-2 rounded transition-colors text-center"
+                    >
+                      + Order Baru ({isJoki ? 'Joki' : 'VIP'})
+                    </button>
+                  </div>
                 ) : (
                   <>
-                    <p className="text-[10px] text-slate-500 mb-3">
+                    <p className="text-[10px] text-slate-500 mb-2 text-center">
                       Slot {slotDef.role} Kosong
                     </p>
                     <button
                       onClick={() => onOpenNewOrder(slotDef.category)}
-                      className="w-full bg-slate-900 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/30 text-xs font-bold py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1"
+                      className="w-full bg-slate-900 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/30 text-xs font-bold py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>{isJoki ? `Input Joki ${slotDef.role}` : `Input VIP ${slotDef.role}`}</span>
@@ -369,7 +373,7 @@ export default function RoomParty({
 
       {/* Modal / Selector if picking player for slot */}
       {slotPicker !== null && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 gpu-layer">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h3 className="font-extrabold text-white text-base flex items-center gap-2">
@@ -399,7 +403,7 @@ export default function RoomParty({
                       onFillSlot(slotPicker, wo.id);
                       setSlotPicker(null);
                     }}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 hover:bg-amber-500/10 border border-slate-800 hover:border-amber-500/40 cursor-pointer transition-all"
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 hover:bg-amber-500/10 border border-slate-800 hover:border-amber-500/40 cursor-pointer transition-colors"
                   >
                     <div className="flex items-center gap-2.5">
                       <span className="w-5 h-5 rounded-full bg-slate-800 text-[10px] font-black flex items-center justify-center text-amber-400">
@@ -439,3 +443,5 @@ export default function RoomParty({
     </div>
   );
 }
+
+export default React.memo(RoomParty);
