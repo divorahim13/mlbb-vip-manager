@@ -183,46 +183,64 @@ export default function App() {
     };
   }, []);
 
-  // Realtime Polling & Tab Focus Sync across multiple devices
+  // Smart, Quota-Safe Cloud Sync (Eliminates excessive polling loops)
+  const lastSyncCheckTimeRef = useRef(0);
+
   useEffect(() => {
     let isCancelled = false;
 
     async function checkRemoteUpdates() {
-      // Don't poll while user has an active sync or is applying an update
-      if (cloudStatus === 'SYNCING' || isApplyingRemoteRef.current) {
+      // Don't poll while tab is hidden, or already syncing / applying updates
+      if (document.hidden || cloudStatus === 'SYNCING' || isApplyingRemoteRef.current) {
         return;
       }
 
-      const res = await fetchCloudData();
-      if (isCancelled || !res || !res.success || !res.exists || !res.data) {
+      // Throttle: don't sync more often than once every 45 seconds unless manually requested
+      const now = Date.now();
+      if (now - lastSyncCheckTimeRef.current < 45000) {
         return;
       }
+      lastSyncCheckTimeRef.current = now;
 
-      const remoteTime = res.updatedAt || res.data.updatedAt;
-      if (remoteTime && remoteTime !== lastSyncedAtRef.current) {
-        const localWriteTime = Number(localStorage.getItem(LOCAL_WRITE_KEY) || 0);
-        const remoteWriteTime = new Date(remoteTime).getTime();
-
-        // Only apply if remote is genuinely newer than our local write time
-        if (remoteWriteTime > localWriteTime) {
-          isApplyingRemoteRef.current = true;
-          setOrders(res.data.orders || []);
-          setRoomParty(res.data.roomParty || INITIAL_ROOM);
-          setMatchHistory(res.data.matchHistory || []);
-          saveData(STORAGE_KEYS.ORDERS, res.data.orders || []);
-          saveData(STORAGE_KEYS.ROOM_PARTY, res.data.roomParty || INITIAL_ROOM);
-          saveData(STORAGE_KEYS.MATCH_HISTORY, res.data.matchHistory || []);
-          lastSyncedAtRef.current = remoteTime;
-          setCloudStatus('ONLINE');
-
-          setTimeout(() => {
-            isApplyingRemoteRef.current = false;
-          }, 500);
+      try {
+        const res = await fetchCloudData();
+        if (isCancelled || !res || !res.success || !res.exists || !res.data) {
+          return;
         }
+
+        const remoteTime = res.updatedAt || res.data.updatedAt;
+        if (remoteTime && remoteTime !== lastSyncedAtRef.current) {
+          const localWriteTime = Number(localStorage.getItem(LOCAL_WRITE_KEY) || 0);
+          const remoteWriteTime = new Date(remoteTime).getTime();
+
+          // Only apply if remote is genuinely newer than our local write time
+          if (remoteWriteTime > localWriteTime) {
+            isApplyingRemoteRef.current = true;
+            setOrders(res.data.orders || []);
+            setRoomParty(res.data.roomParty || INITIAL_ROOM);
+            setMatchHistory(res.data.matchHistory || []);
+            saveData(STORAGE_KEYS.ORDERS, res.data.orders || []);
+            saveData(STORAGE_KEYS.ROOM_PARTY, res.data.roomParty || INITIAL_ROOM);
+            saveData(STORAGE_KEYS.MATCH_HISTORY, res.data.matchHistory || []);
+            lastSyncedAtRef.current = remoteTime;
+            setCloudStatus('ONLINE');
+
+            setTimeout(() => {
+              isApplyingRemoteRef.current = false;
+            }, 500);
+          }
+        }
+      } catch (err) {
+        console.warn('Sync check error:', err);
       }
     }
 
-    const intervalId = setInterval(checkRemoteUpdates, 7000);
+    // Polite polling: only every 60 seconds and only when tab is actively visible
+    const intervalId = setInterval(() => {
+      if (!document.hidden) {
+        checkRemoteUpdates();
+      }
+    }, 60000);
 
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === 'visible') {
