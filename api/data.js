@@ -126,8 +126,12 @@ export default async function handler(req, res) {
         orders: Array.isArray(payload.orders) ? payload.orders : [],
         roomParty: payload.roomParty || { jokiGold: null, jokiJungle: null, mid: null, roam: null, exp: null },
         matchHistory: Array.isArray(payload.matchHistory) ? payload.matchHistory : [],
+        payouts: Array.isArray(payload.payouts) ? payload.payouts : [],
+        myWallet: payload.myWallet && typeof payload.myWallet === 'object' ? payload.myWallet : { balance: 0, history: [] },
+        settledOrderIds: Array.isArray(payload.settledOrderIds) ? payload.settledOrderIds : [],
+        lastSettledAt: payload.lastSettledAt || null,
         updatedAt: now,
-        version: payload.version || 1
+        version: payload.version || 2
       };
 
       // Simple Operation: put() with allowOverwrite

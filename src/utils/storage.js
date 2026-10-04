@@ -5,6 +5,9 @@ export const STORAGE_KEYS = {
   ROOM_PARTY: 'mlbb_vip_room_v4',
   MATCH_HISTORY: 'mlbb_vip_history_v4',
   PILOT_SETTINGS: 'mlbb_vip_pilot_settings_v4',
+  PAYOUTS: 'mlbb_vip_payouts_v4',
+  MY_WALLET: 'mlbb_vip_my_wallet_v4',
+  SETTLED_ORDER_IDS: 'mlbb_vip_settled_order_ids_v4'
 };
 
 export const INITIAL_PILOT_SETTINGS = {
@@ -25,6 +28,21 @@ export const INITIAL_ROOM = {
 
 export const INITIAL_ORDERS = [];
 export const INITIAL_MATCH_HISTORY = [];
+export const INITIAL_PAYOUTS = [];
+export const INITIAL_MY_WALLET = {
+  balance: 655800, // Jatah 3/5 bagian dari Rp 1.093.000 kas sebelumnya
+  history: [
+    {
+      id: 'wal-init-1',
+      timestamp: new Date().toISOString(),
+      type: 'PAYOUT_SHARE',
+      amount: 655800,
+      description: 'Jatah Bagi Hasil 3:2 (60%) dari Kas Sebelumnya Rp 1.093.000',
+      balanceAfter: 655800
+    }
+  ]
+};
+export const INITIAL_SETTLED_ORDER_IDS = [];
 
 export function loadData(key, fallback) {
   try {

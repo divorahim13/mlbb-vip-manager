@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Crown, Swords, DollarSign, Flame, RefreshCw, PlusCircle, Share2, Trash2, Cloud, CloudOff } from 'lucide-react';
+import { Crown, Swords, DollarSign, Flame, RefreshCw, PlusCircle, Share2, Trash2, Cloud, CloudOff, Wallet, Scale } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
 
 function Header({
@@ -8,6 +8,10 @@ function Header({
   orders = [],
   roomParty = {},
   matchHistory = [],
+  myWallet = { balance: 0 },
+  unsettledRevenue = 0,
+  onOpenWalletModal,
+  onOpenPayoutModal,
   onOpenNewOrder,
   onResetData,
   onShareWhatsApp,
@@ -72,10 +76,10 @@ function Header({
                 MLBB <span className="text-amber-400 font-extrabold">VIP MABAR</span>
               </h1>
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                60 FPS
+                PRO SYSTEM
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">Pencatatan Keuangan & Antrean Party Mobile Legends</p>
+            <p className="text-[11px] text-slate-400">Pencatatan Keuangan, Bagi Hasil 3:2 & Dompet Pribadi</p>
           </div>
         </div>
 
@@ -114,18 +118,69 @@ function Header({
             >
               <CloudOff className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Offline (Cache Lokal)</span>
-              <RefreshCw className="w-3 h-3" />
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           )}
 
-          {/* Omzet */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 flex items-center gap-2">
-            <div className="w-7 h-7 rounded bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+          {/* 1. DOMPET UANG SAYA (Milik Admin) */}
+          <button
+            onClick={onOpenWalletModal}
+            title="Klik untuk melihat detail atau menyesuaikan jumlah uang yang Anda miliki saat ini"
+            className="bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/50 rounded-lg px-2.5 py-1.5 flex items-center gap-2 transition-colors text-left"
+          >
+            <div className="w-7 h-7 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <Wallet className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <div className="text-[9px] uppercase font-bold text-emerald-400 flex items-center gap-1">
+                <span>Uang Saya</span>
+                <span className="text-[8px] bg-emerald-500/30 text-emerald-200 px-1 rounded font-black">DOMPET</span>
+              </div>
+              <div className="text-xs sm:text-sm font-black text-emerald-300 leading-tight">
+                {formatRupiah(myWallet?.balance || 0)}
+              </div>
+            </div>
+          </button>
+
+          {/* 2. KAS BELUM DIBAGI (Siap Bagi Hasil 3:2) */}
+          <button
+            onClick={() => {
+              setActiveTab('finance');
+              if (unsettledRevenue > 0) onOpenPayoutModal();
+            }}
+            title={unsettledRevenue > 0 ? "Ada kas berjalan yang siap dibagi 3:2! Klik untuk proses bagi hasil." : "Kas berjalan Rp 0 (Semua uang sebelumnya sudah dibagi 3:2 ke teman)"}
+            className={`border rounded-lg px-2.5 py-1.5 flex items-center gap-2 transition-colors text-left ${
+              unsettledRevenue > 0
+                ? 'bg-amber-950/40 hover:bg-amber-900/50 border-amber-500/60'
+                : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <div className={`w-7 h-7 rounded flex items-center justify-center shrink-0 ${
+              unsettledRevenue > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'
+            }`}>
+              <Scale className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <div className="text-[9px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                <span>Kas Belum Dibagi</span>
+                {unsettledRevenue > 0 && <span className="text-[8px] bg-amber-500 text-slate-950 px-1 rounded font-black">BAGI 3:2</span>}
+              </div>
+              <div className={`text-xs sm:text-sm font-black leading-tight ${
+                unsettledRevenue > 0 ? 'text-amber-400' : 'text-slate-300'
+              }`}>
+                {formatRupiah(unsettledRevenue)}
+              </div>
+            </div>
+          </button>
+
+          {/* 3. Omzet All-Time */}
+          <div className="hidden lg:flex bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-1.5 items-center gap-2">
+            <div className="w-7 h-7 rounded bg-blue-500/10 text-blue-400 flex items-center justify-center">
               <DollarSign className="w-3.5 h-3.5" />
             </div>
             <div>
-              <div className="text-[9px] uppercase font-bold text-slate-400">Total Omzet</div>
-              <div className="text-xs sm:text-sm font-black text-emerald-400 leading-tight">
+              <div className="text-[9px] uppercase font-bold text-slate-400">Omzet All-Time</div>
+              <div className="text-xs sm:text-sm font-black text-white leading-tight">
                 {formatRupiah(totalRevenue)}
               </div>
             </div>
@@ -215,7 +270,7 @@ function Header({
           }`}
         >
           <DollarSign className="w-3.5 h-3.5" />
-          <span>💰 Kas & Rekap Keuangan</span>
+          <span>💰 Kas, Bagi Hasil 3:2 & Dompet</span>
           <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-950 text-emerald-300 font-extrabold border border-emerald-800">
             {orders.length} Transaksi
           </span>

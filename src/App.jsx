@@ -7,6 +7,8 @@ import TopUpModal from './components/TopUpModal';
 import EditOrderModal from './components/EditOrderModal';
 import FinancialView from './components/FinancialView';
 import MatchHistoryView from './components/MatchHistoryView';
+import WalletModal from './components/WalletModal';
+import PayoutModal from './components/PayoutModal';
 import { playSound } from './utils/sound';
 import { formatRupiah } from './utils/pricing';
 import { fetchCloudData, saveCloudData } from './utils/cloudSync';
@@ -15,6 +17,9 @@ import {
   INITIAL_ORDERS,
   INITIAL_ROOM,
   INITIAL_MATCH_HISTORY,
+  INITIAL_PAYOUTS,
+  INITIAL_MY_WALLET,
+  INITIAL_SETTLED_ORDER_IDS,
   loadData,
   saveData
 } from './utils/storage';
@@ -27,6 +32,12 @@ export default function App() {
   const [orders, setOrders] = useState(() => loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS));
   const [roomParty, setRoomParty] = useState(() => loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM));
   const [matchHistory, setMatchHistory] = useState(() => loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY));
+  const [payouts, setPayouts] = useState(() => loadData(STORAGE_KEYS.PAYOUTS, INITIAL_PAYOUTS));
+  const [myWallet, setMyWallet] = useState(() => loadData(STORAGE_KEYS.MY_WALLET, INITIAL_MY_WALLET));
+  const [settledOrderIds, setSettledOrderIds] = useState(() => loadData(STORAGE_KEYS.SETTLED_ORDER_IDS, INITIAL_SETTLED_ORDER_IDS));
+
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
 
   // Cloud Database Sync States
   const [cloudStatus, setCloudStatus] = useState('ONLINE'); // 'ONLINE' | 'SYNCING' | 'OFFLINE'
@@ -48,8 +59,30 @@ export default function App() {
     }, 3500);
   };
 
+  // Unsettled Cash & Order Count calculations (Single-pass)
+  const settledSet = useMemo(() => new Set(settledOrderIds || []), [settledOrderIds]);
+  const { unsettledRevenue, unsettledOrderCount } = useMemo(() => {
+    let rev = 0;
+    let count = 0;
+    for (let i = 0; i < orders.length; i++) {
+      const o = orders[i];
+      if (!settledSet.has(o.id)) {
+        rev += Number(o.amountPaid) || 0;
+        count++;
+      }
+    }
+    return { unsettledRevenue: rev, unsettledOrderCount: count };
+  }, [orders, settledSet]);
+
   // Helper to directly persist and save to cloud immediately
-  const directPersistAndSync = async (newOrders, newRoom, newHistory) => {
+  const directPersistAndSync = async (
+    newOrders = orders,
+    newRoom = roomParty,
+    newHistory = matchHistory,
+    newPayouts = payouts,
+    newWallet = myWallet,
+    newSettledIds = settledOrderIds
+  ) => {
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
 
@@ -58,6 +91,9 @@ export default function App() {
     saveData(STORAGE_KEYS.ORDERS, newOrders);
     saveData(STORAGE_KEYS.ROOM_PARTY, newRoom);
     saveData(STORAGE_KEYS.MATCH_HISTORY, newHistory);
+    saveData(STORAGE_KEYS.PAYOUTS, newPayouts);
+    saveData(STORAGE_KEYS.MY_WALLET, newWallet);
+    saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, newSettledIds);
 
     // 2. Immediately launch Cloud DB save
     setCloudStatus('SYNCING');
@@ -66,6 +102,9 @@ export default function App() {
         orders: newOrders,
         roomParty: newRoom,
         matchHistory: newHistory,
+        payouts: newPayouts,
+        myWallet: newWallet,
+        settledOrderIds: newSettledIds,
         updatedAt: nowIso
       });
 
@@ -104,12 +143,18 @@ export default function App() {
             const currentOrders = loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS);
             const currentRoom = loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM);
             const currentHistory = loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY);
+            const currentPayouts = loadData(STORAGE_KEYS.PAYOUTS, INITIAL_PAYOUTS);
+            const currentWallet = loadData(STORAGE_KEYS.MY_WALLET, INITIAL_MY_WALLET);
+            const currentSettledIds = loadData(STORAGE_KEYS.SETTLED_ORDER_IDS, INITIAL_SETTLED_ORDER_IDS);
 
             setCloudStatus('SYNCING');
             const saveRes = await saveCloudData({
               orders: currentOrders,
               roomParty: currentRoom,
               matchHistory: currentHistory,
+              payouts: currentPayouts,
+              myWallet: currentWallet,
+              settledOrderIds: currentSettledIds,
               updatedAt: new Date(localWriteTime).toISOString()
             });
 
@@ -124,14 +169,25 @@ export default function App() {
             const cloudOrders = Array.isArray(cloud.data.orders) ? cloud.data.orders : [];
             const cloudRoom = cloud.data.roomParty || INITIAL_ROOM;
             const cloudHistory = Array.isArray(cloud.data.matchHistory) ? cloud.data.matchHistory : [];
+            const cloudPayouts = Array.isArray(cloud.data.payouts) ? cloud.data.payouts : [];
+            const cloudWallet = cloud.data.myWallet && typeof cloud.data.myWallet === 'object' ? cloud.data.myWallet : INITIAL_MY_WALLET;
+            const cloudSettledIds = Array.isArray(cloud.data.settledOrderIds) ? cloud.data.settledOrderIds : [];
 
             isApplyingRemoteRef.current = true;
             setOrders(cloudOrders);
             setRoomParty(cloudRoom);
             setMatchHistory(cloudHistory);
+            setPayouts(cloudPayouts);
+            setMyWallet(cloudWallet);
+            setSettledOrderIds(cloudSettledIds);
+
             saveData(STORAGE_KEYS.ORDERS, cloudOrders);
             saveData(STORAGE_KEYS.ROOM_PARTY, cloudRoom);
             saveData(STORAGE_KEYS.MATCH_HISTORY, cloudHistory);
+            saveData(STORAGE_KEYS.PAYOUTS, cloudPayouts);
+            saveData(STORAGE_KEYS.MY_WALLET, cloudWallet);
+            saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, cloudSettledIds);
+
             lastSyncedAtRef.current = cloud.updatedAt || cloud.data.updatedAt;
             setCloudStatus('ONLINE');
 
@@ -144,13 +200,19 @@ export default function App() {
           const currentOrders = loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS);
           const currentRoom = loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM);
           const currentHistory = loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY);
+          const currentPayouts = loadData(STORAGE_KEYS.PAYOUTS, INITIAL_PAYOUTS);
+          const currentWallet = loadData(STORAGE_KEYS.MY_WALLET, INITIAL_MY_WALLET);
+          const currentSettledIds = loadData(STORAGE_KEYS.SETTLED_ORDER_IDS, INITIAL_SETTLED_ORDER_IDS);
 
-          if (currentOrders.length > 0) {
+          if (currentOrders.length > 0 || currentPayouts.length > 0) {
             setCloudStatus('SYNCING');
             const saveRes = await saveCloudData({
               orders: currentOrders,
               roomParty: currentRoom,
               matchHistory: currentHistory,
+              payouts: currentPayouts,
+              myWallet: currentWallet,
+              settledOrderIds: currentSettledIds,
               updatedAt: new Date().toISOString()
             });
             if (saveRes && saveRes.success) {
@@ -216,12 +278,27 @@ export default function App() {
           // Only apply if remote is genuinely newer than our local write time
           if (remoteWriteTime > localWriteTime) {
             isApplyingRemoteRef.current = true;
-            setOrders(res.data.orders || []);
-            setRoomParty(res.data.roomParty || INITIAL_ROOM);
-            setMatchHistory(res.data.matchHistory || []);
-            saveData(STORAGE_KEYS.ORDERS, res.data.orders || []);
-            saveData(STORAGE_KEYS.ROOM_PARTY, res.data.roomParty || INITIAL_ROOM);
-            saveData(STORAGE_KEYS.MATCH_HISTORY, res.data.matchHistory || []);
+            const cloudOrders = Array.isArray(res.data.orders) ? res.data.orders : [];
+            const cloudRoom = res.data.roomParty || INITIAL_ROOM;
+            const cloudHistory = Array.isArray(res.data.matchHistory) ? res.data.matchHistory : [];
+            const cloudPayouts = Array.isArray(res.data.payouts) ? res.data.payouts : [];
+            const cloudWallet = res.data.myWallet && typeof res.data.myWallet === 'object' ? res.data.myWallet : INITIAL_MY_WALLET;
+            const cloudSettledIds = Array.isArray(res.data.settledOrderIds) ? res.data.settledOrderIds : [];
+
+            setOrders(cloudOrders);
+            setRoomParty(cloudRoom);
+            setMatchHistory(cloudHistory);
+            setPayouts(cloudPayouts);
+            setMyWallet(cloudWallet);
+            setSettledOrderIds(cloudSettledIds);
+
+            saveData(STORAGE_KEYS.ORDERS, cloudOrders);
+            saveData(STORAGE_KEYS.ROOM_PARTY, cloudRoom);
+            saveData(STORAGE_KEYS.MATCH_HISTORY, cloudHistory);
+            saveData(STORAGE_KEYS.PAYOUTS, cloudPayouts);
+            saveData(STORAGE_KEYS.MY_WALLET, cloudWallet);
+            saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, cloudSettledIds);
+
             lastSyncedAtRef.current = remoteTime;
             setCloudStatus('ONLINE');
 
@@ -261,12 +338,27 @@ export default function App() {
       const res = await fetchCloudData();
       if (res && res.success && res.exists && res.data) {
         isApplyingRemoteRef.current = true;
-        setOrders(res.data.orders || []);
-        setRoomParty(res.data.roomParty || INITIAL_ROOM);
-        setMatchHistory(res.data.matchHistory || []);
-        saveData(STORAGE_KEYS.ORDERS, res.data.orders || []);
-        saveData(STORAGE_KEYS.ROOM_PARTY, res.data.roomParty || INITIAL_ROOM);
-        saveData(STORAGE_KEYS.MATCH_HISTORY, res.data.matchHistory || []);
+        const cloudOrders = Array.isArray(res.data.orders) ? res.data.orders : [];
+        const cloudRoom = res.data.roomParty || INITIAL_ROOM;
+        const cloudHistory = Array.isArray(res.data.matchHistory) ? res.data.matchHistory : [];
+        const cloudPayouts = Array.isArray(res.data.payouts) ? res.data.payouts : [];
+        const cloudWallet = res.data.myWallet && typeof res.data.myWallet === 'object' ? res.data.myWallet : INITIAL_MY_WALLET;
+        const cloudSettledIds = Array.isArray(res.data.settledOrderIds) ? res.data.settledOrderIds : [];
+
+        setOrders(cloudOrders);
+        setRoomParty(cloudRoom);
+        setMatchHistory(cloudHistory);
+        setPayouts(cloudPayouts);
+        setMyWallet(cloudWallet);
+        setSettledOrderIds(cloudSettledIds);
+
+        saveData(STORAGE_KEYS.ORDERS, cloudOrders);
+        saveData(STORAGE_KEYS.ROOM_PARTY, cloudRoom);
+        saveData(STORAGE_KEYS.MATCH_HISTORY, cloudHistory);
+        saveData(STORAGE_KEYS.PAYOUTS, cloudPayouts);
+        saveData(STORAGE_KEYS.MY_WALLET, cloudWallet);
+        saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, cloudSettledIds);
+
         lastSyncedAtRef.current = res.updatedAt || res.data.updatedAt;
         setCloudStatus('ONLINE');
         showToast('☁️ Data berhasil disinkronkan dari Cloud Database!');
@@ -275,7 +367,7 @@ export default function App() {
         }, 500);
       } else if (res && res.success && !res.exists) {
         // Push local to cloud
-        const saveRes = await saveCloudData({ orders, roomParty, matchHistory });
+        const saveRes = await saveCloudData({ orders, roomParty, matchHistory, payouts, myWallet, settledOrderIds });
         if (saveRes && saveRes.success) {
           lastSyncedAtRef.current = saveRes.updatedAt;
           setCloudStatus('ONLINE');
@@ -693,13 +785,15 @@ export default function App() {
     });
 
     const updatedOrders = orders.filter(o => o.id !== orderId);
+    const updatedSettledIds = settledOrderIds.filter(id => id !== orderId);
 
     setRoomParty(updatedRoom);
     setOrders(updatedOrders);
+    setSettledOrderIds(updatedSettledIds);
     showToast('Data berhasil dihapus.');
 
     // Immediate persist & cloud save
-    directPersistAndSync(updatedOrders, updatedRoom, matchHistory);
+    directPersistAndSync(updatedOrders, updatedRoom, matchHistory, payouts, myWallet, updatedSettledIds);
   };
 
   // Reset all data
@@ -708,14 +802,125 @@ export default function App() {
       const emptyOrders = [];
       const emptyRoom = { jokiGold: null, jokiJungle: null, mid: null, roam: null, exp: null };
       const emptyHistory = [];
+      const emptySettledIds = [];
 
       setOrders(emptyOrders);
       setRoomParty(emptyRoom);
       setMatchHistory(emptyHistory);
+      setSettledOrderIds(emptySettledIds);
 
-      await directPersistAndSync(emptyOrders, emptyRoom, emptyHistory);
-      showToast('Seluruh data di Cloud Database berhasil dibersihkan.');
+      await directPersistAndSync(emptyOrders, emptyRoom, emptyHistory, payouts, myWallet, emptySettledIds);
+      showToast('Seluruh data order & antrean di Cloud Database berhasil dibersihkan.');
     }
+  };
+
+  // Execute Bagi Hasil 3:2 and reset active kas to Rp 0
+  const handleExecutePayout = async (payoutData) => {
+    const now = new Date().toISOString();
+    const payoutId = `pay-${Date.now()}`;
+
+    // 1. Gather all currently unsettled order IDs
+    const currentSettledSet = new Set(settledOrderIds);
+    const newSettledOrderIdsList = [...settledOrderIds];
+    orders.forEach(o => {
+      if (!currentSettledSet.has(o.id)) {
+        newSettledOrderIdsList.push(o.id);
+      }
+    });
+
+    // 2. Create payout history item
+    const newPayoutRecord = {
+      id: payoutId,
+      timestamp: now,
+      totalAmount: payoutData.totalAmount,
+      ratioAdmin: payoutData.ratioAdmin,
+      ratioPartner: payoutData.ratioPartner,
+      myShare: payoutData.myShare,
+      friendShare: payoutData.friendShare,
+      ordersSettledCount: orders.length - settledOrderIds.length,
+      note: payoutData.note
+    };
+    const updatedPayouts = [newPayoutRecord, ...payouts];
+
+    // 3. Update wallet if user requested
+    let updatedWallet = { ...myWallet };
+    if (payoutData.addToWallet && payoutData.myShare > 0) {
+      const newBal = (updatedWallet.balance || 0) + payoutData.myShare;
+      const historyItem = {
+        id: `tx-${Date.now()}`,
+        timestamp: now,
+        type: 'PAYOUT_SHARE',
+        amount: payoutData.myShare,
+        description: `Bagi hasil party (${payoutData.ratioAdmin}:${payoutData.ratioPartner})`,
+        balanceAfter: newBal
+      };
+      updatedWallet = {
+        balance: newBal,
+        history: [historyItem, ...(updatedWallet.history || [])]
+      };
+      setMyWallet(updatedWallet);
+    }
+
+    setPayouts(updatedPayouts);
+    setSettledOrderIds(newSettledOrderIdsList);
+
+    playSound('victory');
+    showToast(`✅ Berhasil bagi hasil! Uang Anda: ${formatRupiah(payoutData.myShare)}, Teman: ${formatRupiah(payoutData.friendShare)}. Saldo kas aktif di-reset ke Rp 0!`);
+
+    await directPersistAndSync(orders, roomParty, matchHistory, updatedPayouts, updatedWallet, newSettledOrderIdsList);
+  };
+
+  // Adjust Wallet Balance manually
+  const handleUpdateWalletBalance = async (newBalance, note) => {
+    const now = new Date().toISOString();
+    const oldBalance = myWallet.balance || 0;
+    const diff = newBalance - oldBalance;
+    const historyItem = {
+      id: `tx-${Date.now()}`,
+      timestamp: now,
+      type: diff >= 0 ? 'ADJUST_UP' : 'ADJUST_DOWN',
+      amount: Math.abs(diff),
+      description: note || 'Penyesuaian saldo manual',
+      balanceAfter: newBalance
+    };
+
+    const updatedWallet = {
+      balance: newBalance,
+      history: [historyItem, ...(myWallet.history || [])]
+    };
+
+    setMyWallet(updatedWallet);
+    playSound('victory');
+    showToast(`Saldo Dompet Uang Saya diperbarui: ${formatRupiah(newBalance)}`);
+
+    await directPersistAndSync(orders, roomParty, matchHistory, payouts, updatedWallet, settledOrderIds);
+  };
+
+  // Add Income or Expense to Wallet
+  const handleAddWalletTransaction = async (tx) => {
+    const now = new Date().toISOString();
+    const currentBalance = myWallet.balance || 0;
+    const newBalance = tx.type === 'INCOME' ? currentBalance + tx.amount : Math.max(0, currentBalance - tx.amount);
+
+    const historyItem = {
+      id: `tx-${Date.now()}`,
+      timestamp: now,
+      type: tx.type,
+      amount: tx.amount,
+      description: tx.description,
+      balanceAfter: newBalance
+    };
+
+    const updatedWallet = {
+      balance: newBalance,
+      history: [historyItem, ...(myWallet.history || [])]
+    };
+
+    setMyWallet(updatedWallet);
+    playSound('victory');
+    showToast(`Transaksi dompet dicatat: ${tx.type === 'INCOME' ? '+' : '-'}${formatRupiah(tx.amount)}`);
+
+    await directPersistAndSync(orders, roomParty, matchHistory, payouts, updatedWallet, settledOrderIds);
   };
 
   // Generate WhatsApp Share Format
@@ -800,6 +1005,9 @@ export default function App() {
       orders,
       roomParty,
       matchHistory,
+      payouts,
+      myWallet,
+      settledOrderIds,
       exportedAt: new Date().toISOString()
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -825,14 +1033,20 @@ export default function App() {
         const newOrders = data.orders || orders;
         const newRoom = data.roomParty || roomParty;
         const newHistory = data.matchHistory || matchHistory;
+        const newPayouts = data.payouts || payouts;
+        const newWallet = data.myWallet || myWallet;
+        const newSettledIds = data.settledOrderIds || settledOrderIds;
 
         setOrders(newOrders);
         setRoomParty(newRoom);
         setMatchHistory(newHistory);
+        setPayouts(newPayouts);
+        setMyWallet(newWallet);
+        setSettledOrderIds(newSettledIds);
         showToast('Data berhasil direstore dari backup!');
 
         // Immediately sync restored data to cloud
-        await directPersistAndSync(newOrders, newRoom, newHistory);
+        await directPersistAndSync(newOrders, newRoom, newHistory, newPayouts, newWallet, newSettledIds);
       } catch {
         showToast('Format file JSON tidak valid.', 'error');
       }
@@ -865,6 +1079,10 @@ export default function App() {
         orders={orders}
         roomParty={roomParty}
         matchHistory={matchHistory}
+        myWallet={myWallet}
+        unsettledRevenue={unsettledRevenue}
+        onOpenWalletModal={() => setIsWalletModalOpen(true)}
+        onOpenPayoutModal={() => setIsPayoutModalOpen(true)}
         onOpenNewOrder={handleOpenOrderModalVip}
         onResetData={handleResetData}
         onShareWhatsApp={handleShareWhatsApp}
@@ -910,6 +1128,13 @@ export default function App() {
         {activeTab === 'finance' && (
           <FinancialView
             orders={orders}
+            payouts={payouts}
+            myWallet={myWallet}
+            settledOrderIds={settledOrderIds}
+            unsettledRevenue={unsettledRevenue}
+            unsettledOrderCount={unsettledOrderCount}
+            onOpenWalletModal={() => setIsWalletModalOpen(true)}
+            onOpenPayoutModal={() => setIsPayoutModalOpen(true)}
             onMarkPaid={handleMarkPaid}
             onTopUpOrder={handleOpenTopUp}
             onEditOrder={handleOpenEdit}
@@ -936,6 +1161,22 @@ export default function App() {
       </main>
 
       {/* Modals */}
+      <WalletModal
+        isOpen={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+        myWallet={myWallet}
+        onUpdateBalance={handleUpdateWalletBalance}
+        onAddTransaction={handleAddWalletTransaction}
+      />
+
+      <PayoutModal
+        isOpen={isPayoutModalOpen}
+        onClose={() => setIsPayoutModalOpen(false)}
+        unsettledRevenue={unsettledRevenue}
+        unsettledOrderCount={unsettledOrderCount}
+        onConfirmPayout={handleExecutePayout}
+      />
+
       <OrderModal
         isOpen={orderModalConfig.isOpen}
         defaultOrderType={orderModalConfig.defaultType}
