@@ -29,6 +29,12 @@ function getPublicBlobUrl(filename = DATA_KEY) {
   return `https://jgi9lwivzsm9oyrp.public.blob.vercel-storage.com/${filename}`;
 }
 
+// Sidik isi data tanpa updatedAt, untuk mendeteksi penyimpanan yang tidak mengubah apa pun
+function dataFingerprint(data) {
+  const { updatedAt: _ignored, ...rest } = data;
+  return JSON.stringify(rest);
+}
+
 export default async function handler(req, res) {
   // CORS & Strict No-Cache headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -134,7 +140,23 @@ export default async function handler(req, res) {
         version: payload.version || 2
       };
 
-      // Simple Operation: put() with allowOverwrite
+      // Lewati put() jika isi sama persis dengan data terakhir (instance hangat) -> hemat kuota
+      // (hanya jika cache masih segar, agar tidak salah anggap saat perangkat lain baru menulis)
+      if (
+        cachedData &&
+        Date.now() - lastFetchTime < IN_MEMORY_CACHE_TTL &&
+        dataFingerprint(cachedData) === dataFingerprint(savePayload)
+      ) {
+        return res.status(200).json({
+          success: true,
+          unchanged: true,
+          blobUrl: cachedBlobUrl,
+          updatedAt: cachedData.updatedAt
+        });
+      }
+
+      // NOTE: put() = 1 Blob *Advanced* Operation (kuota Hobby 2.000/bulan). Klien sudah
+      // menggabung/menunda penyimpanan (lihat src/utils/cloudSync.js), jangan panggil put() berulang.
       const blob = await put(DATA_KEY, JSON.stringify(savePayload), {
         access: 'public',
         addRandomSuffix: false,

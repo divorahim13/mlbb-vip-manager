@@ -11,7 +11,7 @@ import WalletModal from './components/WalletModal';
 import PayoutModal from './components/PayoutModal';
 import { playSound } from './utils/sound';
 import { formatRupiah } from './utils/pricing';
-import { fetchCloudData, saveCloudData } from './utils/cloudSync';
+import { fetchCloudData, saveCloudData, discardPendingCloudSave, onCloudSaved } from './utils/cloudSync';
 import {
   STORAGE_KEYS,
   INITIAL_ORDERS,
@@ -156,7 +156,7 @@ export default function App() {
               myWallet: currentWallet,
               settledOrderIds: currentSettledIds,
               updatedAt: new Date(localWriteTime).toISOString()
-            });
+            }, { immediate: true });
 
             if (saveRes && saveRes.success) {
               lastSyncedAtRef.current = saveRes.updatedAt;
@@ -173,6 +173,7 @@ export default function App() {
             const cloudWallet = cloud.data.myWallet && typeof cloud.data.myWallet === 'object' ? cloud.data.myWallet : INITIAL_MY_WALLET;
             const cloudSettledIds = Array.isArray(cloud.data.settledOrderIds) ? cloud.data.settledOrderIds : [];
 
+            discardPendingCloudSave();
             isApplyingRemoteRef.current = true;
             setOrders(cloudOrders);
             setRoomParty(cloudRoom);
@@ -214,7 +215,7 @@ export default function App() {
               myWallet: currentWallet,
               settledOrderIds: currentSettledIds,
               updatedAt: new Date().toISOString()
-            });
+            }, { immediate: true });
             if (saveRes && saveRes.success) {
               lastSyncedAtRef.current = saveRes.updatedAt;
               setCloudStatus('ONLINE');
@@ -243,6 +244,13 @@ export default function App() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  // Simpan ke cloud digabung/ditunda (hemat kuota Blob); catat waktu sinkron saat upload benar-benar selesai
+  useEffect(() => {
+    return onCloudSaved((updatedAt) => {
+      if (updatedAt) lastSyncedAtRef.current = updatedAt;
+    });
   }, []);
 
   // Smart, Quota-Safe Cloud Sync (Eliminates excessive polling loops)
@@ -277,6 +285,7 @@ export default function App() {
 
           // Only apply if remote is genuinely newer than our local write time
           if (remoteWriteTime > localWriteTime) {
+            discardPendingCloudSave();
             isApplyingRemoteRef.current = true;
             const cloudOrders = Array.isArray(res.data.orders) ? res.data.orders : [];
             const cloudRoom = res.data.roomParty || INITIAL_ROOM;
@@ -337,6 +346,7 @@ export default function App() {
     try {
       const res = await fetchCloudData();
       if (res && res.success && res.exists && res.data) {
+        discardPendingCloudSave();
         isApplyingRemoteRef.current = true;
         const cloudOrders = Array.isArray(res.data.orders) ? res.data.orders : [];
         const cloudRoom = res.data.roomParty || INITIAL_ROOM;
@@ -367,7 +377,7 @@ export default function App() {
         }, 500);
       } else if (res && res.success && !res.exists) {
         // Push local to cloud
-        const saveRes = await saveCloudData({ orders, roomParty, matchHistory, payouts, myWallet, settledOrderIds });
+        const saveRes = await saveCloudData({ orders, roomParty, matchHistory, payouts, myWallet, settledOrderIds }, { immediate: true });
         if (saveRes && saveRes.success) {
           lastSyncedAtRef.current = saveRes.updatedAt;
           setCloudStatus('ONLINE');
