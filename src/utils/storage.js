@@ -29,18 +29,10 @@ export const INITIAL_ROOM = {
 export const INITIAL_ORDERS = [];
 export const INITIAL_MATCH_HISTORY = [];
 export const INITIAL_PAYOUTS = [];
+// Saldo awal selalu Rp 0. Saldo sebenarnya datang dari data cloud / catatan transaksi, bukan angka tertanam di kode.
 export const INITIAL_MY_WALLET = {
-  balance: 655800, // Jatah 3/5 bagian dari Rp 1.093.000 kas sebelumnya
-  history: [
-    {
-      id: 'wal-init-1',
-      timestamp: new Date().toISOString(),
-      type: 'PAYOUT_SHARE',
-      amount: 655800,
-      description: 'Jatah Bagi Hasil 3:2 (60%) dari Kas Sebelumnya Rp 1.093.000',
-      balanceAfter: 655800
-    }
-  ]
+  balance: 0,
+  history: []
 };
 export const INITIAL_SETTLED_ORDER_IDS = [];
 

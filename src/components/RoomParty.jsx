@@ -73,6 +73,7 @@ function RoomParty({
   onTopUpOrder,
   onEditOrder,
   onAutoRotate,
+  onRemoveExpired,
   waitingOrders = [],
   onOpenNewOrder
 }) {
@@ -128,6 +129,15 @@ function RoomParty({
                 className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-lg text-xs transition-colors shadow-sm"
               >
                 🔄 Gantikan dengan Antrean #{waitingOrders[0]?.username}
+              </button>
+            )}
+            {onRemoveExpired && (
+              <button
+                onClick={onRemoveExpired}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold px-3 py-2 rounded-lg text-xs transition-colors"
+                title="Pindahkan semua akun yang kuotanya habis ke daftar Selesai"
+              >
+                ✅ Keluarkan {expiredPlayers.length > 1 ? `${expiredPlayers.length} akun` : 'akun'} yang selesai
               </button>
             )}
             <button

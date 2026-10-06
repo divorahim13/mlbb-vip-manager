@@ -19,6 +19,26 @@ Jika kredit habis, **semua situs di akun Netlify berhenti** sampai periode berik
   terakhir) di `backups/` dalam store yang sama (lihat `netlify/lib/dbHandler.mjs`).
 - Function dibatasi 60 request/menit per IP (`netlify/functions/data.mjs`).
 
+## Sinkron antar perangkat (aman dipakai dari beberapa perangkat)
+
+- Server menyimpan nomor revisi (`rev`). Setiap simpanan membawa `baseRev` (revisi yang menjadi dasar datanya).
+  Jika perangkat lain sudah menulis, server **menggabungkan** data (bukan menimpa): order digabung per id lewat
+  `updatedAt`, penghapusan dicatat sebagai tombstone, room dibangun ulang dari order, match/payout digabung per id,
+  saldo dompet dihitung ulang dari riwayat transaksi. Logikanya ada di `netlify/lib/merge.mjs`.
+- Reset, bersihkan riwayat, dan restore backup adalah penimpaan yang disengaja (`force`); snapshot harian di server
+  menyimpan versi sebelumnya. `historyClearedAt` mencegah perangkat basi menghidupkan kembali riwayat yang dibersihkan.
+- Perubahan lokal yang belum terkirim ditandai `dirty` (bertahan walau halaman ditutup) dan dikirim saat dibuka lagi.
+
+## Aturan uang
+
+- Kas berjalan = `amountPaid - settledAmount` per order. Bagi hasil menetapkan `settledAmount = amountPaid`, sehingga
+  top up / pelunasan setelahnya otomatis masuk kas berikutnya (`src/utils/settlement.js`).
+- Match: kuota semua akun di room dipotong 1. Akun berkuota 0 yang masih di room tidak dipotong tetapi ditandai
+  "di luar kuota" di riwayat (`src/utils/matchLogic.js`).
+- Tarif: Standar (7k / paket 5 = 30k), Glory (10k per match), Gratis, Custom (`src/utils/pricing.js`).
+- Pengeluaran dompet yang melebihi saldo ditolak. Hapus order bisa diurungkan 8 detik dan memperingatkan uang
+  yang belum dibagi.
+
 ## Pengembangan
 
 ```bash

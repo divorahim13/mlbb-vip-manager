@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Plus, CheckCircle, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
 import { formatRupiah, isGloryOrder } from '../utils/pricing';
-import { getCompletionTime, formatDateTime } from '../utils/orderTime';
+import { getCompletionInfo, formatDateTime } from '../utils/orderTime';
 
 function WaitingQueue({
   waitingOrders = [],
@@ -387,11 +387,15 @@ function WaitingQueue({
                         {co.matchesOrdered} Match Selesai • Total {formatRupiah(co.priceTotal)} ({co.paymentMethod})
                       </div>
                       {(() => {
-                        const doneAt = formatDateTime(getCompletionTime(co, matchHistory));
+                        const info = getCompletionInfo(co, matchHistory);
+                        const doneAt = formatDateTime(info.iso);
                         return doneAt ? (
-                          <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                          <div
+                            className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5"
+                            title={info.exact ? 'Waktu tercatat saat kuota habis' : 'Perkiraan dari match terakhir (data lama belum punya cap waktu selesai)'}
+                          >
                             <Clock className="w-2.5 h-2.5" />
-                            <span>Selesai {doneAt}</span>
+                            <span>Selesai {info.exact ? '' : '≈ '}{doneAt}</span>
                           </div>
                         ) : null;
                       })()}

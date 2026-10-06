@@ -2,8 +2,9 @@
 //
 // - completedAt dicatat saat order PINDAH ke status COMPLETED, dan dihapus bila keluar dari COMPLETED
 //   (mis. Order Lagi / top up) sehingga selesai berikutnya mendapat waktu baru.
-// - Order lama (sebelum fitur ini) tidak punya completedAt: waktunya dicari dari match terakhir yang
-//   melibatkan pemain itu, atau createdAt bila tidak ada.
+// - Order lama (sebelum fitur ini) tidak punya completedAt: waktunya diperkirakan dari match terakhir
+//   pemain itu (pakai id order bila match mencatat `participantIds`, kalau tidak pakai nama), lalu
+//   createdAt bila tidak ada.
 
 export function stampCompletion(prev, next, nowIso = new Date().toISOString()) {
   if (next.status === 'COMPLETED') {
@@ -21,18 +22,31 @@ export function stampCompletion(prev, next, nowIso = new Date().toISOString()) {
   return next;
 }
 
-// matchHistory terbaru di depan; participants berbentuk "@username (VIP Mid Lane)"
-function lastMatchTimeOf(username, matchHistory) {
-  if (!username || !Array.isArray(matchHistory)) return null;
-  const tag = `@${username}`;
-  const m = matchHistory.find(
-    (x) => Array.isArray(x.participants) && x.participants.some((p) => p === tag || p.startsWith(`${tag} `))
-  );
+const hasName = (m, username) =>
+  Array.isArray(m.participants) && m.participants.some((p) => p === `@${username}` || p.startsWith(`@${username} `));
+
+// matchHistory terbaru di depan. Match yang dimainkan di luar kuota tidak dihitung sebagai waktu selesai.
+function lastMatchTimeOf(order, matchHistory) {
+  if (!Array.isArray(matchHistory)) return null;
+  const m = matchHistory.find((x) => {
+    if (Array.isArray(x.participantIds)) {
+      return x.participantIds.includes(order.id) && !(x.overQuotaIds || []).includes(order.id);
+    }
+    return order.username ? hasName(x, order.username) : false; // data lama: hanya ada nama
+  });
   return m ? m.timestamp : null;
 }
 
+// { iso, exact } - exact=false berarti perkiraan (bukan cap waktu asli)
+export function getCompletionInfo(order, matchHistory) {
+  if (order.completedAt) return { iso: order.completedAt, exact: true };
+  const m = lastMatchTimeOf(order, matchHistory);
+  if (m) return { iso: m, exact: false };
+  return { iso: order.createdAt || null, exact: false };
+}
+
 export function getCompletionTime(order, matchHistory) {
-  return order.completedAt || lastMatchTimeOf(order.username, matchHistory) || order.createdAt || null;
+  return getCompletionInfo(order, matchHistory).iso;
 }
 
 export function formatDateTime(iso) {

@@ -71,7 +71,7 @@ function EditOrderModal({ isOpen, order, onClose, onSave }) {
   };
 
   const handleRecalculateStandardPrice = () => {
-    const p = calculatePricing(matchesOrdered);
+    const p = calculatePricing(matchesOrdered, null, false, order.priceType === 'GLORY' ? 'GLORY' : 'STANDARD');
     setPriceTotal(p.total);
     setAmountPaid(p.total);
     setPaymentStatus('LUNAS');

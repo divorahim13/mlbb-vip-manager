@@ -11,8 +11,12 @@ import WalletModal from './components/WalletModal';
 import PayoutModal from './components/PayoutModal';
 import { playSound } from './utils/sound';
 import { formatRupiah } from './utils/pricing';
-import { fetchCloudData, saveCloudData, discardPendingCloudSave, onCloudSaved } from './utils/cloudSync';
+import { fetchCloudData, saveCloudData, adoptCloudState, getSyncState, onCloudSaved } from './utils/cloudSync';
 import { stampCompletion } from './utils/orderTime';
+import { newId } from './utils/ids';
+import { computeUnsettled, migrateLegacySettlement, applySettlement, unsettledAmountOf } from './utils/settlement';
+import { recordMatch } from './utils/matchLogic';
+import { stampChangedOrders, updateTombstones } from './utils/orderSync';
 import {
   STORAGE_KEYS,
   INITIAL_ORDERS,
@@ -27,10 +31,33 @@ import {
 import { Check, AlertCircle, Copy, Swords } from 'lucide-react';
 
 const LOCAL_WRITE_KEY = 'mlbb_last_local_write_v1';
+const TOMBSTONES_KEY = 'mlbb_vip_tombstones_v1';
+const HISTORY_CLEARED_KEY = 'mlbb_vip_history_cleared_at_v1';
+
+// Bentuk data dari cloud -> bentuk state aplikasi (sekaligus memigrasi data lama: settledAmount per order)
+function snapshotFromCloud(data) {
+  const settledIds = Array.isArray(data.settledOrderIds) ? data.settledOrderIds : [];
+  const rawOrders = Array.isArray(data.orders) ? data.orders : [];
+  return {
+    orders: migrateLegacySettlement(rawOrders, settledIds).orders,
+    roomParty: data.roomParty || INITIAL_ROOM,
+    matchHistory: Array.isArray(data.matchHistory) ? data.matchHistory : [],
+    payouts: Array.isArray(data.payouts) ? data.payouts : [],
+    myWallet: data.myWallet && typeof data.myWallet === 'object' ? data.myWallet : INITIAL_MY_WALLET,
+    settledOrderIds: settledIds,
+    tombstones: Array.isArray(data.tombstones) ? data.tombstones : [],
+    historyClearedAt: data.historyClearedAt || null
+  };
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('room'); // 'room' | 'finance' | 'history'
-  const [orders, setOrders] = useState(() => loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS));
+  const [orders, setOrders] = useState(() =>
+    migrateLegacySettlement(
+      loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS),
+      loadData(STORAGE_KEYS.SETTLED_ORDER_IDS, INITIAL_SETTLED_ORDER_IDS)
+    ).orders
+  );
   const [roomParty, setRoomParty] = useState(() => loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM));
   const [matchHistory, setMatchHistory] = useState(() => loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY));
   const [payouts, setPayouts] = useState(() => loadData(STORAGE_KEYS.PAYOUTS, INITIAL_PAYOUTS));
@@ -44,83 +71,147 @@ export default function App() {
   const [cloudStatus, setCloudStatus] = useState('ONLINE'); // 'ONLINE' | 'SYNCING' | 'OFFLINE'
   const [isSyncing, setIsSyncing] = useState(false);
   const isApplyingRemoteRef = useRef(false);
-  const lastSyncedAtRef = useRef(null);
-  const saveTimeoutRef = useRef(null);
-  const isInitialLoadRef = useRef(true);
+
+  // Versi terakhir order yang dikenal (untuk memberi cap waktu pada yang berubah) dan daftar order yang dihapus
+  const ordersRef = useRef(null);
+  if (ordersRef.current === null) ordersRef.current = orders;
+  const tombstonesRef = useRef(null);
+  if (tombstonesRef.current === null) tombstonesRef.current = loadData(TOMBSTONES_KEY, []);
+  // Kapan riwayat match terakhir dibersihkan dengan sengaja (agar perangkat basi tidak menghidupkannya kembali)
+  const historyClearedAtRef = useRef(undefined);
+  if (historyClearedAtRef.current === undefined) historyClearedAtRef.current = loadData(HISTORY_CLEARED_KEY, null);
+  // State terbaru untuk handler yang berjalan belakangan (mis. tombol "Urungkan")
+  const stateRef = useRef({});
+  stateRef.current = { orders, roomParty, matchHistory, payouts, myWallet, settledOrderIds };
 
   const [orderModalConfig, setOrderModalConfig] = useState({ isOpen: false, defaultType: 'VIP_MABAR' });
   const [topUpOrder, setTopUpOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
 
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => {
+  // action (opsional): { label, onClick } -> tombol di toast, mis. "Urungkan"
+  const showToast = useCallback((message, type = 'success', action = null) => {
+    setToast({ message, type, action });
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
       setToast(null);
-    }, 3500);
-  };
+    }, action ? 8000 : 3500);
+  }, []);
 
-  // Unsettled Cash & Order Count calculations (Single-pass)
-  const settledSet = useMemo(() => new Set(settledOrderIds || []), [settledOrderIds]);
+  // Kas berjalan: uang yang diterima dikurangi yang sudah dibagi (settledAmount per order)
   const { unsettledRevenue, unsettledOrderCount } = useMemo(() => {
-    let rev = 0;
-    let count = 0;
-    for (let i = 0; i < orders.length; i++) {
-      const o = orders[i];
-      if (!settledSet.has(o.id)) {
-        rev += Number(o.amountPaid) || 0;
-        count++;
-      }
-    }
-    return { unsettledRevenue: rev, unsettledOrderCount: count };
-  }, [orders, settledSet]);
+    const u = computeUnsettled(orders);
+    return { unsettledRevenue: u.revenue, unsettledOrderCount: u.count };
+  }, [orders]);
 
-  // Helper to directly persist and save to cloud immediately
+  const buildPayload = (o, r, h, p, w, s, nowIso) => ({
+    orders: o,
+    roomParty: r,
+    matchHistory: h,
+    payouts: p,
+    myWallet: w,
+    settledOrderIds: s,
+    tombstones: tombstonesRef.current,
+    historyClearedAt: historyClearedAtRef.current,
+    updatedAt: nowIso
+  });
+
+  // Helper to directly persist locally and queue the cloud save.
+  // opts.force = true -> timpa data cloud (reset / restore yang disengaja)
+  // opts.historyClearedAt = 'now' (riwayat dibersihkan) | null (riwayat dipulihkan dari backup)
   const directPersistAndSync = async (
     newOrders = orders,
     newRoom = roomParty,
     newHistory = matchHistory,
     newPayouts = payouts,
     newWallet = myWallet,
-    newSettledIds = settledOrderIds
+    newSettledIds = settledOrderIds,
+    opts = {}
   ) => {
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
 
+    // 0. Cap waktu per order yang berubah + catat order yang dihapus (agar penggabungan antar perangkat benar)
+    const { orders: stamped, removedIds } = stampChangedOrders(ordersRef.current, newOrders, nowIso);
+    const tombstones = updateTombstones(tombstonesRef.current, removedIds, stamped.map((o) => o.id), nowIso);
+    ordersRef.current = stamped;
+    tombstonesRef.current = tombstones;
+    if (stamped !== newOrders) setOrders(stamped);
+    if ('historyClearedAt' in opts) {
+      historyClearedAtRef.current = opts.historyClearedAt === 'now' ? nowIso : opts.historyClearedAt;
+      saveData(HISTORY_CLEARED_KEY, historyClearedAtRef.current);
+    }
+
     // 1. Immediately save to LocalStorage (synchronous)
     localStorage.setItem(LOCAL_WRITE_KEY, nowMs.toString());
-    saveData(STORAGE_KEYS.ORDERS, newOrders);
+    saveData(STORAGE_KEYS.ORDERS, stamped);
     saveData(STORAGE_KEYS.ROOM_PARTY, newRoom);
     saveData(STORAGE_KEYS.MATCH_HISTORY, newHistory);
     saveData(STORAGE_KEYS.PAYOUTS, newPayouts);
     saveData(STORAGE_KEYS.MY_WALLET, newWallet);
     saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, newSettledIds);
+    saveData(TOMBSTONES_KEY, tombstones);
 
-    // 2. Immediately launch Cloud DB save
+    // 2. Queue the Cloud DB save (digabung & ditunda; lihat utils/cloudSync.js)
     setCloudStatus('SYNCING');
     try {
-      const res = await saveCloudData({
-        orders: newOrders,
-        roomParty: newRoom,
-        matchHistory: newHistory,
-        payouts: newPayouts,
-        myWallet: newWallet,
-        settledOrderIds: newSettledIds,
-        updatedAt: nowIso
-      });
-
-      if (res && res.success) {
-        lastSyncedAtRef.current = res.updatedAt || nowIso;
-        setCloudStatus('ONLINE');
-      } else {
-        console.warn('Cloud save response:', res);
-        setCloudStatus('ONLINE');
-      }
+      await saveCloudData(buildPayload(stamped, newRoom, newHistory, newPayouts, newWallet, newSettledIds, nowIso), { force: !!opts.force });
+      setCloudStatus('ONLINE');
     } catch (err) {
       console.error('Error saving to Cloud DB:', err);
       setCloudStatus('OFFLINE');
     }
   };
+
+  // Terapkan data dari cloud (muat awal / perangkat lain / hasil gabungan server) ke state + penyimpanan lokal.
+  // Mengembalikan true bila ada yang berbeda dari tampilan saat ini.
+  const applyCloudSnapshot = useCallback((data) => {
+    const snap = snapshotFromCloud(data);
+    const cur = stateRef.current;
+    const changed =
+      JSON.stringify(cur.orders) !== JSON.stringify(snap.orders) ||
+      JSON.stringify(cur.roomParty) !== JSON.stringify(snap.roomParty) ||
+      (cur.matchHistory || []).length !== snap.matchHistory.length ||
+      (cur.payouts || []).length !== snap.payouts.length ||
+      (cur.myWallet && cur.myWallet.balance) !== snap.myWallet.balance;
+
+    isApplyingRemoteRef.current = true;
+    ordersRef.current = snap.orders;
+    tombstonesRef.current = snap.tombstones;
+    historyClearedAtRef.current = snap.historyClearedAt;
+    saveData(HISTORY_CLEARED_KEY, snap.historyClearedAt);
+    setOrders(snap.orders);
+    setRoomParty(snap.roomParty);
+    setMatchHistory(snap.matchHistory);
+    setPayouts(snap.payouts);
+    setMyWallet(snap.myWallet);
+    setSettledOrderIds(snap.settledOrderIds);
+
+    saveData(STORAGE_KEYS.ORDERS, snap.orders);
+    saveData(STORAGE_KEYS.ROOM_PARTY, snap.roomParty);
+    saveData(STORAGE_KEYS.MATCH_HISTORY, snap.matchHistory);
+    saveData(STORAGE_KEYS.PAYOUTS, snap.payouts);
+    saveData(STORAGE_KEYS.MY_WALLET, snap.myWallet);
+    saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, snap.settledOrderIds);
+    saveData(TOMBSTONES_KEY, snap.tombstones);
+
+    setTimeout(() => {
+      isApplyingRemoteRef.current = false;
+    }, 500);
+    return changed;
+  }, []);
+
+  // Server menggabungkan data kita dengan perubahan perangkat lain -> pakai hasil gabungannya
+  useEffect(() => {
+    return onCloudSaved((info) => {
+      if (info.merged && info.data) {
+        const changed = applyCloudSnapshot(info.data);
+        setCloudStatus('ONLINE');
+        if (changed) showToast('🔄 Perubahan dari perangkat lain digabung otomatis.');
+      }
+    });
+  }, [applyCloudSnapshot, showToast]);
 
   // Initial Sync from Cloud Database on mount
   useEffect(() => {
@@ -132,100 +223,40 @@ export default function App() {
         const cloud = await fetchCloudData();
         if (!isMounted) return;
 
+        const s = stateRef.current;
+        const sync = getSyncState();
         const localWriteTime = Number(localStorage.getItem(LOCAL_WRITE_KEY) || 0);
 
         if (cloud && cloud.success && cloud.exists && cloud.data) {
           const cloudWriteTime = cloud.data.updatedAt ? new Date(cloud.data.updatedAt).getTime() : 0;
+          // Pertama kali memakai sistem revisi: pakai aturan waktu lama. Selanjutnya: penanda "dirty"
+          // (perubahan lokal yang belum terkirim, bertahan walau halaman ditutup).
+          const localHasUnsynced = sync.baseRev === null ? localWriteTime > cloudWriteTime + 1000 : sync.dirty;
 
-          // Check if local has unsaved modifications newer than cloud
-          if (localWriteTime > cloudWriteTime + 1000) {
-            // Local is newer than cloud (e.g. user made changes right before refresh)
-            // Push local to cloud so cloud gets updated
-            const currentOrders = loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS);
-            const currentRoom = loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM);
-            const currentHistory = loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY);
-            const currentPayouts = loadData(STORAGE_KEYS.PAYOUTS, INITIAL_PAYOUTS);
-            const currentWallet = loadData(STORAGE_KEYS.MY_WALLET, INITIAL_MY_WALLET);
-            const currentSettledIds = loadData(STORAGE_KEYS.SETTLED_ORDER_IDS, INITIAL_SETTLED_ORDER_IDS);
-
+          if (localHasUnsynced) {
+            // Kirim data lokal. Jika perangkat lain sudah menulis, server menggabung dan
+            // hasilnya diterapkan oleh listener onCloudSaved.
             setCloudStatus('SYNCING');
-            const saveRes = await saveCloudData({
-              orders: currentOrders,
-              roomParty: currentRoom,
-              matchHistory: currentHistory,
-              payouts: currentPayouts,
-              myWallet: currentWallet,
-              settledOrderIds: currentSettledIds,
-              updatedAt: new Date(localWriteTime).toISOString()
-            }, { immediate: true });
-
-            if (saveRes && saveRes.success) {
-              lastSyncedAtRef.current = saveRes.updatedAt;
-              setCloudStatus('ONLINE');
-            } else {
-              setCloudStatus('ONLINE');
-            }
+            await saveCloudData(
+              buildPayload(s.orders, s.roomParty, s.matchHistory, s.payouts, s.myWallet, s.settledOrderIds, new Date().toISOString()),
+              { immediate: true }
+            );
           } else {
-            // Cloud is newer or equal -> safely load cloud data
-            const cloudOrders = Array.isArray(cloud.data.orders) ? cloud.data.orders : [];
-            const cloudRoom = cloud.data.roomParty || INITIAL_ROOM;
-            const cloudHistory = Array.isArray(cloud.data.matchHistory) ? cloud.data.matchHistory : [];
-            const cloudPayouts = Array.isArray(cloud.data.payouts) ? cloud.data.payouts : [];
-            const cloudWallet = cloud.data.myWallet && typeof cloud.data.myWallet === 'object' ? cloud.data.myWallet : INITIAL_MY_WALLET;
-            const cloudSettledIds = Array.isArray(cloud.data.settledOrderIds) ? cloud.data.settledOrderIds : [];
-
-            discardPendingCloudSave();
-            isApplyingRemoteRef.current = true;
-            setOrders(cloudOrders);
-            setRoomParty(cloudRoom);
-            setMatchHistory(cloudHistory);
-            setPayouts(cloudPayouts);
-            setMyWallet(cloudWallet);
-            setSettledOrderIds(cloudSettledIds);
-
-            saveData(STORAGE_KEYS.ORDERS, cloudOrders);
-            saveData(STORAGE_KEYS.ROOM_PARTY, cloudRoom);
-            saveData(STORAGE_KEYS.MATCH_HISTORY, cloudHistory);
-            saveData(STORAGE_KEYS.PAYOUTS, cloudPayouts);
-            saveData(STORAGE_KEYS.MY_WALLET, cloudWallet);
-            saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, cloudSettledIds);
-
-            lastSyncedAtRef.current = cloud.updatedAt || cloud.data.updatedAt;
-            setCloudStatus('ONLINE');
-
-            setTimeout(() => {
-              isApplyingRemoteRef.current = false;
-            }, 500);
+            // Cloud lebih baru atau sama -> pakai data cloud
+            applyCloudSnapshot(cloud.data);
+            adoptCloudState(cloud.rev ?? 0, cloud.data);
           }
+          setCloudStatus('ONLINE');
         } else if (cloud && cloud.success && !cloud.exists) {
           // Cloud DB is fresh/empty: push local data to cloud
-          const currentOrders = loadData(STORAGE_KEYS.ORDERS, INITIAL_ORDERS);
-          const currentRoom = loadData(STORAGE_KEYS.ROOM_PARTY, INITIAL_ROOM);
-          const currentHistory = loadData(STORAGE_KEYS.MATCH_HISTORY, INITIAL_MATCH_HISTORY);
-          const currentPayouts = loadData(STORAGE_KEYS.PAYOUTS, INITIAL_PAYOUTS);
-          const currentWallet = loadData(STORAGE_KEYS.MY_WALLET, INITIAL_MY_WALLET);
-          const currentSettledIds = loadData(STORAGE_KEYS.SETTLED_ORDER_IDS, INITIAL_SETTLED_ORDER_IDS);
-
-          if (currentOrders.length > 0 || currentPayouts.length > 0) {
+          if (s.orders.length > 0 || s.payouts.length > 0) {
             setCloudStatus('SYNCING');
-            const saveRes = await saveCloudData({
-              orders: currentOrders,
-              roomParty: currentRoom,
-              matchHistory: currentHistory,
-              payouts: currentPayouts,
-              myWallet: currentWallet,
-              settledOrderIds: currentSettledIds,
-              updatedAt: new Date().toISOString()
-            }, { immediate: true });
-            if (saveRes && saveRes.success) {
-              lastSyncedAtRef.current = saveRes.updatedAt;
-              setCloudStatus('ONLINE');
-            } else {
-              setCloudStatus('ONLINE');
-            }
-          } else {
-            setCloudStatus('ONLINE');
+            await saveCloudData(
+              buildPayload(s.orders, s.roomParty, s.matchHistory, s.payouts, s.myWallet, s.settledOrderIds, new Date().toISOString()),
+              { immediate: true }
+            );
           }
+          setCloudStatus('ONLINE');
         } else {
           setCloudStatus('OFFLINE');
         }
@@ -235,7 +266,6 @@ export default function App() {
       } finally {
         if (isMounted) {
           setIsSyncing(false);
-          isInitialLoadRef.current = false;
         }
       }
     }
@@ -245,13 +275,6 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
-
-  // Simpan ke cloud digabung/ditunda (hemat kuota Blob); catat waktu sinkron saat upload benar-benar selesai
-  useEffect(() => {
-    return onCloudSaved((updatedAt) => {
-      if (updatedAt) lastSyncedAtRef.current = updatedAt;
-    });
   }, []);
 
   // Smart, Quota-Safe Cloud Sync (Eliminates excessive polling loops)
@@ -265,6 +288,9 @@ export default function App() {
       if (document.hidden || cloudStatus === 'SYNCING' || isApplyingRemoteRef.current) {
         return;
       }
+      // Ada perubahan lokal yang belum terkirim: penyimpanan berikutnya yang akan menggabungkan
+      const before = getSyncState();
+      if (before.dirty || before.hasPending) return;
 
       // Throttle: don't sync more often than once every 60 seconds unless manually requested
       const now = Date.now();
@@ -278,45 +304,14 @@ export default function App() {
         if (isCancelled || !res || !res.success || !res.exists || !res.data) {
           return;
         }
+        // Berubah selama pengambilan data? Jangan timpa.
+        const after = getSyncState();
+        if (after.dirty || after.hasPending) return;
+        if (res.rev !== undefined && res.rev === after.baseRev) return; // sudah sama dengan server
 
-        const remoteTime = res.updatedAt || res.data.updatedAt;
-        if (remoteTime && remoteTime !== lastSyncedAtRef.current) {
-          const localWriteTime = Number(localStorage.getItem(LOCAL_WRITE_KEY) || 0);
-          const remoteWriteTime = new Date(remoteTime).getTime();
-
-          // Only apply if remote is genuinely newer than our local write time
-          if (remoteWriteTime > localWriteTime) {
-            discardPendingCloudSave();
-            isApplyingRemoteRef.current = true;
-            const cloudOrders = Array.isArray(res.data.orders) ? res.data.orders : [];
-            const cloudRoom = res.data.roomParty || INITIAL_ROOM;
-            const cloudHistory = Array.isArray(res.data.matchHistory) ? res.data.matchHistory : [];
-            const cloudPayouts = Array.isArray(res.data.payouts) ? res.data.payouts : [];
-            const cloudWallet = res.data.myWallet && typeof res.data.myWallet === 'object' ? res.data.myWallet : INITIAL_MY_WALLET;
-            const cloudSettledIds = Array.isArray(res.data.settledOrderIds) ? res.data.settledOrderIds : [];
-
-            setOrders(cloudOrders);
-            setRoomParty(cloudRoom);
-            setMatchHistory(cloudHistory);
-            setPayouts(cloudPayouts);
-            setMyWallet(cloudWallet);
-            setSettledOrderIds(cloudSettledIds);
-
-            saveData(STORAGE_KEYS.ORDERS, cloudOrders);
-            saveData(STORAGE_KEYS.ROOM_PARTY, cloudRoom);
-            saveData(STORAGE_KEYS.MATCH_HISTORY, cloudHistory);
-            saveData(STORAGE_KEYS.PAYOUTS, cloudPayouts);
-            saveData(STORAGE_KEYS.MY_WALLET, cloudWallet);
-            saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, cloudSettledIds);
-
-            lastSyncedAtRef.current = remoteTime;
-            setCloudStatus('ONLINE');
-
-            setTimeout(() => {
-              isApplyingRemoteRef.current = false;
-            }, 500);
-          }
-        }
+        applyCloudSnapshot(res.data);
+        adoptCloudState(res.rev ?? 0, res.data);
+        setCloudStatus('ONLINE');
       } catch (err) {
         console.warn('Sync check error:', err);
       }
@@ -336,7 +331,7 @@ export default function App() {
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
-  }, [cloudStatus]);
+  }, [cloudStatus, applyCloudSnapshot]);
 
   // Force manual sync
   const handleForceSync = async () => {
@@ -345,42 +340,38 @@ export default function App() {
     playSound('click');
 
     try {
+      const s = stateRef.current;
+      const st = getSyncState();
+
+      if (st.dirty || st.hasPending) {
+        // Ada perubahan lokal yang belum terkirim: kirim sekarang (server menggabung bila perlu)
+        const res = await saveCloudData(
+          buildPayload(s.orders, s.roomParty, s.matchHistory, s.payouts, s.myWallet, s.settledOrderIds, new Date().toISOString()),
+          { immediate: true }
+        );
+        if (res && res.success) {
+          setCloudStatus('ONLINE');
+          showToast('☁️ Perubahan lokal berhasil dikirim & digabung dengan Cloud Database!');
+        } else {
+          setCloudStatus('OFFLINE');
+          showToast('Gagal mengirim ke Cloud DB. Data tetap aman di perangkat ini.', 'error');
+        }
+        return;
+      }
+
       const res = await fetchCloudData();
       if (res && res.success && res.exists && res.data) {
-        discardPendingCloudSave();
-        isApplyingRemoteRef.current = true;
-        const cloudOrders = Array.isArray(res.data.orders) ? res.data.orders : [];
-        const cloudRoom = res.data.roomParty || INITIAL_ROOM;
-        const cloudHistory = Array.isArray(res.data.matchHistory) ? res.data.matchHistory : [];
-        const cloudPayouts = Array.isArray(res.data.payouts) ? res.data.payouts : [];
-        const cloudWallet = res.data.myWallet && typeof res.data.myWallet === 'object' ? res.data.myWallet : INITIAL_MY_WALLET;
-        const cloudSettledIds = Array.isArray(res.data.settledOrderIds) ? res.data.settledOrderIds : [];
-
-        setOrders(cloudOrders);
-        setRoomParty(cloudRoom);
-        setMatchHistory(cloudHistory);
-        setPayouts(cloudPayouts);
-        setMyWallet(cloudWallet);
-        setSettledOrderIds(cloudSettledIds);
-
-        saveData(STORAGE_KEYS.ORDERS, cloudOrders);
-        saveData(STORAGE_KEYS.ROOM_PARTY, cloudRoom);
-        saveData(STORAGE_KEYS.MATCH_HISTORY, cloudHistory);
-        saveData(STORAGE_KEYS.PAYOUTS, cloudPayouts);
-        saveData(STORAGE_KEYS.MY_WALLET, cloudWallet);
-        saveData(STORAGE_KEYS.SETTLED_ORDER_IDS, cloudSettledIds);
-
-        lastSyncedAtRef.current = res.updatedAt || res.data.updatedAt;
+        applyCloudSnapshot(res.data);
+        adoptCloudState(res.rev ?? 0, res.data);
         setCloudStatus('ONLINE');
         showToast('☁️ Data berhasil disinkronkan dari Cloud Database!');
-        setTimeout(() => {
-          isApplyingRemoteRef.current = false;
-        }, 500);
       } else if (res && res.success && !res.exists) {
         // Push local to cloud
-        const saveRes = await saveCloudData({ orders, roomParty, matchHistory, payouts, myWallet, settledOrderIds }, { immediate: true });
+        const saveRes = await saveCloudData(
+          buildPayload(s.orders, s.roomParty, s.matchHistory, s.payouts, s.myWallet, s.settledOrderIds, new Date().toISOString()),
+          { immediate: true }
+        );
         if (saveRes && saveRes.success) {
-          lastSyncedAtRef.current = saveRes.updatedAt;
           setCloudStatus('ONLINE');
           showToast('☁️ Data lokal berhasil diunggah ke Cloud Database!');
         }
@@ -444,10 +435,10 @@ export default function App() {
 
   // Create new order
   const handleSaveOrder = (newOrderData) => {
-    const newId = `ord-${Date.now().toString().slice(-6)}`;
+    const newOrderId = newId('ord');
     const newOrder = {
       ...newOrderData,
-      id: newId,
+      id: newOrderId,
       status: 'WAITING',
       roomSlot: null,
       createdAt: new Date().toISOString()
@@ -471,7 +462,7 @@ export default function App() {
       if (targetSlot) {
         newOrder.status = 'IN_ROOM';
         newOrder.roomSlot = targetSlot;
-        updatedRoom[targetSlot] = newId;
+        updatedRoom[targetSlot] = newOrderId;
         showToast(`Akun customer @${newOrder.username} berhasil didaftarkan & langsung masuk ke ${getSlotTitle(targetSlot)}!`);
       } else {
         showToast(`Pesanan @${newOrder.username} (${newOrder.orderType === 'JOKI' ? 'Joki' : 'VIP Mabar'}) berhasil masuk Antrean!`);
@@ -544,6 +535,14 @@ export default function App() {
     if (!targetOrder) return;
 
     const existingOrderId = roomParty[slotKey];
+    const occupant = existingOrderId && existingOrderId !== orderId ? orders.find(o => o.id === existingOrderId) : null;
+    if (
+      occupant &&
+      occupant.matchesRemaining > 0 &&
+      !window.confirm(`Slot ${getSlotTitle(slotKey)} sedang dipakai @${occupant.username} (sisa ${occupant.matchesRemaining} match).\n\nGanti dengan @${targetOrder.username}? @${occupant.username} akan dikembalikan ke antrean.`)
+    ) {
+      return;
+    }
     let updatedOrders = orders.map(o => {
       if (o.id === existingOrderId) {
         return stampCompletion(o, {
@@ -610,6 +609,26 @@ export default function App() {
     directPersistAndSync(updatedOrders, updatedRoom, matchHistory);
   };
 
+  // Keluarkan semua akun berkuota 0 dari room sekaligus (pindah ke "Selesai")
+  const handleRemoveExpired = () => {
+    const expired = Object.entries(roomParty).filter(([, id]) => {
+      const o = id && orders.find(x => x.id === id);
+      return o && o.matchesRemaining <= 0;
+    });
+    if (expired.length === 0) return;
+
+    const ids = new Set(expired.map(([, id]) => id));
+    const updatedRoom = { ...roomParty };
+    expired.forEach(([slotKey]) => { updatedRoom[slotKey] = null; });
+    const updatedOrders = orders.map(o => (ids.has(o.id) ? stampCompletion(o, { ...o, status: 'COMPLETED', roomSlot: null }) : o));
+
+    setOrders(updatedOrders);
+    setRoomParty(updatedRoom);
+    playSound('click');
+    showToast(`${ids.size} akun yang kuotanya habis dikeluarkan dari room.`);
+    directPersistAndSync(updatedOrders, updatedRoom, matchHistory);
+  };
+
   // Auto rotate: replace expired player with matching waiting player or #1 in queue
   const handleAutoRotate = (slotKey) => {
     if (waitingOrders.length === 0) {
@@ -631,51 +650,22 @@ export default function App() {
     }
   };
 
-  // Finish 1 match (Win or Lose) - cuts quota for ALL active accounts in room
+  // Finish 1 match (Win or Lose) - cuts quota for ALL active accounts in room.
+  // Akun yang kuotanya sudah 0 tidak dipotong, tapi match-nya ditandai "di luar kuota".
   const handleFinishMatch = (result) => {
-    const activeSlotPlayerIds = [
-      roomParty.jokiGold,
-      roomParty.jokiJungle,
-      roomParty.mid,
-      roomParty.roam,
-      roomParty.exp
-    ].filter(Boolean);
+    const { updatedOrders, match, expiredNow, overQuotaCount, participantCount } = recordMatch({
+      orders,
+      roomParty,
+      matchHistory,
+      result
+    });
 
-    if (activeSlotPlayerIds.length === 0) {
+    if (participantCount === 0) {
       showToast('Tidak ada akun customer di dalam room.', 'error');
       return;
     }
 
-    const participants = [];
-    const expiredList = [];
-
-    const updatedOrders = orders.map(ord => {
-      if (activeSlotPlayerIds.includes(ord.id)) {
-        participants.push(`@${ord.username} (${ord.orderType === 'JOKI' ? 'Joki ' + ord.role : 'VIP ' + ord.role})`);
-        const newRemaining = Math.max(0, ord.matchesRemaining - 1);
-        if (newRemaining === 0) {
-          expiredList.push(`@${ord.username}`);
-        }
-        return stampCompletion(ord, {
-          ...ord,
-          matchesRemaining: newRemaining,
-          status: newRemaining === 0 ? 'COMPLETED' : 'IN_ROOM'
-        });
-      }
-      return ord;
-    });
-
-    const newMatch = {
-      id: `match-${Date.now()}`,
-      matchNumber: matchHistory.length + 1,
-      result, // 'WIN' | 'LOSE'
-      timestamp: new Date().toISOString(),
-      participants,
-      mvp: result === 'WIN' ? participants[0] || 'Team Carry' : null,
-      durationMinutes: 15
-    };
-
-    const newHistory = [newMatch, ...matchHistory];
+    const newHistory = [match, ...matchHistory];
 
     setOrders(updatedOrders);
     setMatchHistory(newHistory);
@@ -691,11 +681,17 @@ export default function App() {
       showToast(`💀 DEFEAT! Kuota -1 dicatat.`);
     }
 
-    if (expiredList.length > 0) {
+    if (overQuotaCount > 0) {
+      setTimeout(() => {
+        showToast(`⚠️ ${overQuotaCount} akun berkuota 0 masih di room: ikut match ini TANPA dipotong (ditandai "di luar kuota"). Keluarkan dari room atau top up.`, 'error');
+      }, 700);
+    }
+
+    if (expiredNow.length > 0) {
       setTimeout(() => {
         playSound('alert');
-        showToast(`🚨 Perhatian: Kuota mabar/joki ${expiredList.join(', ')} telah HABIS!`);
-      }, 1200);
+        showToast(`🚨 Perhatian: Kuota mabar/joki ${expiredNow.join(', ')} telah HABIS!`);
+      }, overQuotaCount > 0 ? 4400 : 1200);
     }
   };
 
@@ -786,9 +782,42 @@ export default function App() {
     directPersistAndSync(updatedOrders, roomParty, matchHistory);
   };
 
-  // Delete an order
+  // Kembalikan order yang baru dihapus (tombol "Urungkan" di toast). Memakai state terbaru, bukan yang basi.
+  const restoreDeletedOrder = (target, wasSettledId) => {
+    const cur = stateRef.current;
+    if (cur.orders.some(o => o.id === target.id)) return;
+
+    const room = { ...cur.roomParty };
+    const restored = { ...target };
+    if (restored.roomSlot && !room[restored.roomSlot]) {
+      room[restored.roomSlot] = restored.id;
+    } else if (restored.roomSlot) {
+      restored.roomSlot = null; // slotnya sudah dipakai orang lain
+      restored.status = restored.matchesRemaining > 0 ? 'WAITING' : 'COMPLETED';
+    }
+
+    const newOrders = [restored, ...cur.orders];
+    const newSettled = wasSettledId && !cur.settledOrderIds.includes(restored.id)
+      ? [...cur.settledOrderIds, restored.id]
+      : cur.settledOrderIds;
+
+    setOrders(newOrders);
+    setRoomParty(room);
+    setSettledOrderIds(newSettled);
+    showToast(`Data @${restored.username} dikembalikan.`);
+    directPersistAndSync(newOrders, room, cur.matchHistory, cur.payouts, cur.myWallet, newSettled);
+  };
+
+  // Delete an order (bisa diurungkan selama 8 detik)
   const handleDeleteOrder = (orderId) => {
-    if (!window.confirm('Yakin ingin menghapus data customer ini?')) return;
+    const target = orders.find(o => o.id === orderId);
+    if (!target) return;
+
+    const unsettled = unsettledAmountOf(target);
+    const message = unsettled > 0
+      ? `Yakin menghapus @${target.username}?\n\nUang ${formatRupiah(unsettled)} dari order ini yang belum dibagi hasil juga akan hilang dari kas.`
+      : 'Yakin ingin menghapus data customer ini?';
+    if (!window.confirm(message)) return;
 
     const updatedRoom = { ...roomParty };
     ['jokiGold', 'jokiJungle', 'mid', 'roam', 'exp'].forEach(k => {
@@ -797,13 +826,17 @@ export default function App() {
       }
     });
 
+    const wasSettledId = settledOrderIds.includes(orderId);
     const updatedOrders = orders.filter(o => o.id !== orderId);
     const updatedSettledIds = settledOrderIds.filter(id => id !== orderId);
 
     setRoomParty(updatedRoom);
     setOrders(updatedOrders);
     setSettledOrderIds(updatedSettledIds);
-    showToast('Data berhasil dihapus.');
+    showToast(`Data @${target.username} dihapus.`, 'success', {
+      label: '↩ Urungkan',
+      onClick: () => restoreDeletedOrder(target, wasSettledId)
+    });
 
     // Immediate persist & cloud save
     directPersistAndSync(updatedOrders, updatedRoom, matchHistory, payouts, myWallet, updatedSettledIds);
@@ -822,7 +855,7 @@ export default function App() {
       setMatchHistory(emptyHistory);
       setSettledOrderIds(emptySettledIds);
 
-      await directPersistAndSync(emptyOrders, emptyRoom, emptyHistory, payouts, myWallet, emptySettledIds);
+      await directPersistAndSync(emptyOrders, emptyRoom, emptyHistory, payouts, myWallet, emptySettledIds, { force: true, historyClearedAt: 'now' });
       showToast('Seluruh data order & antrean di Cloud Database berhasil dibersihkan.');
     }
   };
@@ -830,16 +863,13 @@ export default function App() {
   // Execute Bagi Hasil 3:2 and reset active kas to Rp 0
   const handleExecutePayout = async (payoutData) => {
     const now = new Date().toISOString();
-    const payoutId = `pay-${Date.now()}`;
+    const payoutId = newId('pay');
 
-    // 1. Gather all currently unsettled order IDs
-    const currentSettledSet = new Set(settledOrderIds);
-    const newSettledOrderIdsList = [...settledOrderIds];
-    orders.forEach(o => {
-      if (!currentSettledSet.has(o.id)) {
-        newSettledOrderIdsList.push(o.id);
-      }
-    });
+    // 1. Semua uang yang sudah diterima dianggap dibagi (settledAmount = amountPaid per order).
+    //    Uang yang masuk SETELAH ini (top up / pelunasan) otomatis masuk kas berjalan berikutnya.
+    const { count: settledCount } = computeUnsettled(orders);
+    const settledOrders = applySettlement(orders);
+    const newSettledOrderIdsList = [...new Set([...settledOrderIds, ...orders.map(o => o.id)])]; // penanda kompatibilitas
 
     // 2. Create payout history item
     const newPayoutRecord = {
@@ -850,7 +880,7 @@ export default function App() {
       ratioPartner: payoutData.ratioPartner,
       myShare: payoutData.myShare,
       friendShare: payoutData.friendShare,
-      ordersSettledCount: orders.length - settledOrderIds.length,
+      ordersSettledCount: settledCount,
       note: payoutData.note
     };
     const updatedPayouts = [newPayoutRecord, ...payouts];
@@ -860,7 +890,7 @@ export default function App() {
     if (payoutData.addToWallet && payoutData.myShare > 0) {
       const newBal = (updatedWallet.balance || 0) + payoutData.myShare;
       const historyItem = {
-        id: `tx-${Date.now()}`,
+        id: newId('tx'),
         timestamp: now,
         type: 'PAYOUT_SHARE',
         amount: payoutData.myShare,
@@ -874,13 +904,14 @@ export default function App() {
       setMyWallet(updatedWallet);
     }
 
+    setOrders(settledOrders);
     setPayouts(updatedPayouts);
     setSettledOrderIds(newSettledOrderIdsList);
 
     playSound('victory');
     showToast(`✅ Berhasil bagi hasil! Uang Anda: ${formatRupiah(payoutData.myShare)}, Teman: ${formatRupiah(payoutData.friendShare)}. Saldo kas aktif di-reset ke Rp 0!`);
 
-    await directPersistAndSync(orders, roomParty, matchHistory, updatedPayouts, updatedWallet, newSettledOrderIdsList);
+    await directPersistAndSync(settledOrders, roomParty, matchHistory, updatedPayouts, updatedWallet, newSettledOrderIdsList);
   };
 
   // Adjust Wallet Balance manually
@@ -889,7 +920,7 @@ export default function App() {
     const oldBalance = myWallet.balance || 0;
     const diff = newBalance - oldBalance;
     const historyItem = {
-      id: `tx-${Date.now()}`,
+      id: newId('tx'),
       timestamp: now,
       type: diff >= 0 ? 'ADJUST_UP' : 'ADJUST_DOWN',
       amount: Math.abs(diff),
@@ -911,12 +942,16 @@ export default function App() {
 
   // Add Income or Expense to Wallet
   const handleAddWalletTransaction = async (tx) => {
+    if (tx.type !== 'INCOME' && tx.amount > (myWallet.balance || 0)) {
+      showToast(`Saldo tidak cukup. Saldo ${formatRupiah(myWallet.balance || 0)}, pengeluaran ${formatRupiah(tx.amount)}.`, 'error');
+      return;
+    }
     const now = new Date().toISOString();
     const currentBalance = myWallet.balance || 0;
-    const newBalance = tx.type === 'INCOME' ? currentBalance + tx.amount : Math.max(0, currentBalance - tx.amount);
+    const newBalance = tx.type === 'INCOME' ? currentBalance + tx.amount : currentBalance - tx.amount;
 
     const historyItem = {
-      id: `tx-${Date.now()}`,
+      id: newId('tx'),
       timestamp: now,
       type: tx.type,
       amount: tx.amount,
@@ -1035,7 +1070,7 @@ export default function App() {
     showToast('File backup JSON berhasil diunduh!');
   };
 
-  // Import JSON Restore
+  // Import JSON Restore (menimpa data cloud secara sengaja; snapshot harian di server menyimpan versi sebelumnya)
   const handleImportJSON = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1044,28 +1079,32 @@ export default function App() {
     reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target.result);
-        const newOrders = data.orders || orders;
-        const newRoom = data.roomParty || roomParty;
-        const newHistory = data.matchHistory || matchHistory;
-        const newPayouts = data.payouts || payouts;
-        const newWallet = data.myWallet || myWallet;
-        const newSettledIds = data.settledOrderIds || settledOrderIds;
+        const snap = snapshotFromCloud({
+          orders: data.orders || orders,
+          roomParty: data.roomParty || roomParty,
+          matchHistory: data.matchHistory || matchHistory,
+          payouts: data.payouts || payouts,
+          myWallet: data.myWallet || myWallet,
+          settledOrderIds: data.settledOrderIds || settledOrderIds,
+          tombstones: []
+        });
 
-        setOrders(newOrders);
-        setRoomParty(newRoom);
-        setMatchHistory(newHistory);
-        setPayouts(newPayouts);
-        setMyWallet(newWallet);
-        setSettledOrderIds(newSettledIds);
+        setOrders(snap.orders);
+        setRoomParty(snap.roomParty);
+        setMatchHistory(snap.matchHistory);
+        setPayouts(snap.payouts);
+        setMyWallet(snap.myWallet);
+        setSettledOrderIds(snap.settledOrderIds);
         showToast('Data berhasil direstore dari backup!');
 
         // Immediately sync restored data to cloud
-        await directPersistAndSync(newOrders, newRoom, newHistory, newPayouts, newWallet, newSettledIds);
+        await directPersistAndSync(snap.orders, snap.roomParty, snap.matchHistory, snap.payouts, snap.myWallet, snap.settledOrderIds, { force: true, historyClearedAt: null });
       } catch {
         showToast('Format file JSON tidak valid.', 'error');
       }
     };
     reader.readAsText(file);
+    e.target.value = ''; // izinkan memilih file yang sama lagi
   };
 
   return (
@@ -1082,6 +1121,19 @@ export default function App() {
           >
             {toast.type === 'error' ? <AlertCircle className="w-4 h-4 text-rose-400" /> : <Check className="w-4 h-4 text-emerald-400" />}
             <span>{toast.message}</span>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  const act = toast.action;
+                  setToast(null);
+                  act.onClick();
+                }}
+                className="ml-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition-colors"
+              >
+                {toast.action.label}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1119,6 +1171,7 @@ export default function App() {
               onTopUpOrder={handleOpenTopUp}
               onEditOrder={handleOpenEdit}
               onAutoRotate={handleAutoRotate}
+              onRemoveExpired={handleRemoveExpired}
               waitingOrders={waitingOrders}
               onOpenNewOrder={handleOpenOrderModalCategory}
             />
@@ -1168,7 +1221,7 @@ export default function App() {
               if (window.confirm('Bersihkan semua catatan riwayat match?')) {
                 setMatchHistory([]);
                 showToast('Riwayat match dibersihkan.');
-                directPersistAndSync(orders, roomParty, []);
+                directPersistAndSync(orders, roomParty, [], undefined, undefined, undefined, { force: true, historyClearedAt: 'now' });
               }
             }}
           />

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { formatRupiah } from '../utils/pricing';
+import { isFullySettled } from '../utils/settlement';
 import {
   DollarSign,
   Search,
@@ -50,8 +51,6 @@ function FinancialView({
   const [typeFilter, setTypeFilter] = useState('ALL'); // 'ALL' | 'JOKI' | 'VIP_MABAR'
   const [payoutFilter, setPayoutFilter] = useState('ALL'); // 'ALL' | 'SETTLED' | 'UNSETTLED'
   const [showPayoutHistory, setShowPayoutHistory] = useState(true);
-
-  const settledSet = useMemo(() => new Set(settledOrderIds || []), [settledOrderIds]);
 
   // Single-pass financial calculations (O(N))
   const {
@@ -152,14 +151,14 @@ function FinancialView({
       const matchMethod = methodFilter === 'ALL' || o.paymentMethod === methodFilter;
       const matchType = typeFilter === 'ALL' || (typeFilter === 'JOKI' ? o.orderType === 'JOKI' : o.orderType !== 'JOKI');
 
-      const isSettled = settledSet.has(o.id);
+      const isSettled = isFullySettled(o);
       const matchPayout =
         payoutFilter === 'ALL' ||
         (payoutFilter === 'SETTLED' ? isSettled : !isSettled);
 
       return matchSearch && matchStatus && matchMethod && matchType && matchPayout;
     });
-  }, [orders, searchTerm, statusFilter, methodFilter, typeFilter, payoutFilter, settledSet]);
+  }, [orders, searchTerm, statusFilter, methodFilter, typeFilter, payoutFilter]);
 
   return (
     <div className="space-y-6">
@@ -599,7 +598,7 @@ function FinancialView({
                 filteredOrders.map((ord) => {
                   const underpaid = Math.max(0, (Number(ord.priceTotal) || 0) - (Number(ord.amountPaid) || 0));
                   const isJoki = ord.orderType === 'JOKI';
-                  const isSettled = settledSet.has(ord.id);
+                  const isSettled = isFullySettled(ord);
 
                   return (
                     <tr key={ord.id} className="hover:bg-slate-950/50 transition-colors">

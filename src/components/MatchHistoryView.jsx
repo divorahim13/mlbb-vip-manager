@@ -110,14 +110,23 @@ function MatchHistoryView({ matchHistory = [], onClearHistory }) {
                   {m.participants && m.participants.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[10px] text-slate-400">Akun:</span>
-                      {m.participants.map((p, pIdx) => (
-                        <span
-                          key={pIdx}
-                          className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300"
-                        >
-                          {p.role ? `${p.role}: ` : ''}@{p.username}
-                        </span>
-                      ))}
+                      {m.participants.map((p, pIdx) => {
+                        const name = typeof p === 'string' ? p : `${p.role ? `${p.role}: ` : ''}@${p.username}`;
+                        const overQuota = Array.isArray(m.overQuotaIds) && Array.isArray(m.participantIds) && m.overQuotaIds.includes(m.participantIds[pIdx]);
+                        return (
+                          <span
+                            key={pIdx}
+                            title={overQuota ? 'Ikut main padahal kuota sudah 0 (tidak dipotong)' : undefined}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                              overQuota
+                                ? 'bg-amber-500/10 border-amber-500/50 text-amber-300'
+                                : 'bg-slate-900 border-slate-800 text-slate-300'
+                            }`}
+                          >
+                            {name}{overQuota ? ' ⚠ di luar kuota' : ''}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

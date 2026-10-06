@@ -6,6 +6,15 @@
 // - POST yang isinya sama dengan data tersimpan tidak menulis apa pun.
 // - Jeda minimal antar penulisan di server (hentikan loop liar dari klien mana pun).
 // - Payload dibatasi ukurannya.
+//
+// Konsistensi antar perangkat (optimistic concurrency):
+// - Server menyimpan `rev` (nomor revisi). Klien mengirim `baseRev` = revisi yang menjadi dasar datanya.
+// - baseRev == rev server  -> kiriman klien diterima apa adanya (rev + 1).
+// - baseRev berbeda/tidak ada (perangkat lain sudah menulis) -> data DIGABUNG (lihat merge.mjs), bukan ditimpa;
+//   hasil gabungan dikembalikan ke klien (`merged: true`).
+// - `force: true` (reset / restore yang disengaja) -> ditimpa, snapshot harian tetap menyimpan versi sebelumnya.
+
+import { mergeSnapshots, mergeTombstones } from './merge.mjs';
 
 export const DB_KEY = 'mlbb-live-db.json';
 const BACKUP_PREFIX = 'backups/';
@@ -13,6 +22,7 @@ const BACKUP_KEEP = 14; // simpan 14 snapshot harian terakhir
 const MAX_BODY_BYTES = 1_000_000;
 const MIN_WRITE_GAP_MS = 2000;
 const JAKARTA_OFFSET_MS = 7 * 60 * 60 * 1000;
+const DB_VERSION = 3;
 
 const reply = (status, body) =>
   new Response(JSON.stringify(body), {
@@ -20,7 +30,9 @@ const reply = (status, body) =>
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
   });
 
-// Bentuk data yang disimpan (sama dengan versi Vercel sebelumnya)
+const revOf = (db) => Number(db && db.rev) || 0;
+
+// Bentuk data yang disimpan
 export function normalize(payload, nowIso) {
   return {
     orders: Array.isArray(payload.orders) ? payload.orders : [],
@@ -30,16 +42,30 @@ export function normalize(payload, nowIso) {
     myWallet: payload.myWallet && typeof payload.myWallet === 'object' ? payload.myWallet : { balance: 0, history: [] },
     settledOrderIds: Array.isArray(payload.settledOrderIds) ? payload.settledOrderIds : [],
     lastSettledAt: payload.lastSettledAt || null,
+    tombstones: Array.isArray(payload.tombstones) ? payload.tombstones : [],
+    historyClearedAt: payload.historyClearedAt || null,
     updatedAt: nowIso,
-    version: payload.version || 2
+    version: Math.max(Number(payload.version) || 0, DB_VERSION)
   };
 }
 
-// Sidik isi data tanpa updatedAt, untuk mendeteksi "tidak ada perubahan"
+// Sidik isi data untuk mendeteksi "tidak ada perubahan". Dibuat kanonik: tidak bergantung pada urutan
+// kunci, rev, updatedAt, maupun versi (data lama dari versi sebelumnya harus sama dengan hasil gabungan identik).
+const SLOT_ORDER = ['jokiGold', 'jokiJungle', 'mid', 'roam', 'exp'];
 export function fingerprint(data) {
-  const rest = { ...data };
-  delete rest.updatedAt;
-  return JSON.stringify(rest);
+  const room = data.roomParty && typeof data.roomParty === 'object' ? data.roomParty : {};
+  const wallet = data.myWallet && typeof data.myWallet === 'object' ? data.myWallet : {};
+  return JSON.stringify({
+    orders: Array.isArray(data.orders) ? data.orders : [],
+    roomParty: SLOT_ORDER.map((k) => room[k] || null),
+    matchHistory: Array.isArray(data.matchHistory) ? data.matchHistory : [],
+    payouts: Array.isArray(data.payouts) ? data.payouts : [],
+    myWallet: { balance: Number(wallet.balance) || 0, history: Array.isArray(wallet.history) ? wallet.history : [] },
+    settledOrderIds: Array.isArray(data.settledOrderIds) ? data.settledOrderIds : [],
+    lastSettledAt: data.lastSettledAt || null,
+    tombstones: Array.isArray(data.tombstones) ? data.tombstones : [],
+    historyClearedAt: data.historyClearedAt || null
+  });
 }
 
 async function readDb(store) {
@@ -67,7 +93,7 @@ export async function handleRequest(req, store, now = new Date()) {
     if (req.method === 'GET' || req.method === 'HEAD') {
       const data = await readDb(store);
       if (!data) return reply(200, { success: true, exists: false, data: null });
-      return reply(200, { success: true, exists: true, data, updatedAt: data.updatedAt });
+      return reply(200, { success: true, exists: true, data, updatedAt: data.updatedAt, rev: revOf(data) });
     }
 
     if (req.method === 'POST') {
@@ -88,24 +114,48 @@ export async function handleRequest(req, store, now = new Date()) {
       }
 
       const nowIso = now.toISOString();
+      const force = payload.force === true;
+      const baseRev = payload.baseRev; // undefined (klien lama) | null (belum pernah sinkron) | angka
       const next = normalize(payload, nowIso);
       const existing = await readDb(store);
 
-      if (existing) {
-        // Isi sama -> tidak perlu menulis
-        if (fingerprint(existing) === fingerprint(next)) {
-          return reply(200, { success: true, unchanged: true, updatedAt: existing.updatedAt });
-        }
-        // Rem darurat: tolak penulisan beruntun yang terlalu rapat (mencegah loop dari klien mana pun)
-        const gap = now.getTime() - Date.parse(existing.updatedAt || 0);
-        if (gap >= 0 && gap < MIN_WRITE_GAP_MS) {
-          return reply(429, { success: false, error: 'Too many writes, retry shortly', retryAfterMs: MIN_WRITE_GAP_MS - gap });
-        }
-        await snapshotBeforeOverwrite(store, existing, now);
+      // Database masih kosong: simpan sebagai revisi 1
+      if (!existing) {
+        await store.setJSON(DB_KEY, { ...next, rev: 1 });
+        return reply(200, { success: true, updatedAt: nowIso, rev: 1 });
       }
 
-      await store.setJSON(DB_KEY, next);
-      return reply(200, { success: true, updatedAt: nowIso });
+      const existingRev = revOf(existing);
+
+      // Isi sama -> tidak perlu menulis (klien kini sama dengan server pada revisi ini)
+      if (!force && fingerprint(existing) === fingerprint(next)) {
+        return reply(200, { success: true, unchanged: true, updatedAt: existing.updatedAt, rev: existingRev });
+      }
+
+      // Rem darurat: tolak penulisan beruntun yang terlalu rapat (mencegah loop dari klien mana pun)
+      const gap = now.getTime() - Date.parse(existing.updatedAt || 0);
+      if (gap >= 0 && gap < MIN_WRITE_GAP_MS) {
+        return reply(429, { success: false, error: 'Too many writes, retry shortly', retryAfterMs: MIN_WRITE_GAP_MS - gap });
+      }
+
+      await snapshotBeforeOverwrite(store, existing, now);
+
+      // Klien berbasis revisi terbaru (atau reset yang disengaja): terima apa adanya
+      if (force || baseRev === existingRev) {
+        const tombstones = force ? next.tombstones : mergeTombstones(existing.tombstones, next.tombstones, now.getTime());
+        const saved = { ...next, tombstones, rev: existingRev + 1 };
+        await store.setJSON(DB_KEY, saved);
+        return reply(200, { success: true, updatedAt: nowIso, rev: saved.rev });
+      }
+
+      // Perangkat lain sudah menulis sejak klien terakhir sinkron: GABUNGKAN
+      const merged = { ...mergeSnapshots(existing, next, nowIso), rev: existingRev + 1 };
+      if (fingerprint(merged) === fingerprint(existing)) {
+        // kiriman klien tidak menambah apa pun di luar yang sudah ada di server
+        return reply(200, { success: true, merged: true, unchanged: true, data: existing, updatedAt: existing.updatedAt, rev: existingRev });
+      }
+      await store.setJSON(DB_KEY, merged);
+      return reply(200, { success: true, merged: true, data: merged, updatedAt: nowIso, rev: merged.rev });
     }
 
     return reply(405, { success: false, error: 'Method not allowed' });

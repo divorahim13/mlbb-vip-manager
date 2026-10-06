@@ -46,6 +46,25 @@ function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 
   const [transferNote, setTransferNote] = useState('');
   const [directToRoom, setDirectToRoom] = useState(hasEmptySlot);
 
+  // Setiap kali formulir dibuka: mulai dari kondisi bersih. Tanpa ini, isian pesanan sebelumnya
+  // (nama, jumlah match, terutama tarif Glory) ikut terbawa ke pesanan berikutnya.
+  useEffect(() => {
+    if (!isOpen) return;
+    setOrderType(defaultOrderType);
+    setUsername('');
+    setUserId('');
+    setPhone('');
+    setAccountLogin('');
+    setRole(defaultOrderType === 'JOKI' ? 'Gold Lane' : 'Mid Lane');
+    setMatches(5);
+    setPriceType('STANDARD');
+    setCustomPriceInput('');
+    setPaymentMethod('DANA');
+    setAmountPaid('');
+    setTransferNote('');
+    setDirectToRoom(hasEmptySlot);
+  }, [isOpen]);
+
   // Auto-switch default role when orderType changes
   useEffect(() => {
     if (orderType === 'JOKI') {

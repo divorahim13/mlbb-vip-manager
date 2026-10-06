@@ -52,11 +52,11 @@ test('POST dengan isi sama tidak menulis apa pun (hemat operasi)', async () => {
 
 test('rem darurat: penulisan berbeda dalam < 2 dtk ditolak 429, lalu lolos setelahnya', async () => {
   const s = fakeStore();
-  await handleRequest(post(sample(1)), s, t0);
-  const fast = await handleRequest(post(sample(2)), s, at(500));
+  const first = await (await handleRequest(post(sample(1)), s, t0)).json();
+  const fast = await handleRequest(post({ ...sample(2), baseRev: first.rev }), s, at(500));
   assert.equal(fast.status, 429);
   assert.equal((await s.get(DB_KEY)).orders[0].id, 'o1', 'data lama tetap utuh');
-  const ok = await handleRequest(post(sample(2)), s, at(5000));
+  const ok = await handleRequest(post({ ...sample(2), baseRev: first.rev }), s, at(5000));
   assert.equal(ok.status, 200);
   assert.equal((await s.get(DB_KEY)).orders[0].id, 'o2');
 });
@@ -100,5 +100,5 @@ test('data asli (cadangan Vercel) lolos tanpa kehilangan satu pun data', async (
   for (const k of ['orders', 'matchHistory', 'payouts', 'myWallet', 'settledOrderIds', 'roomParty']) {
     assert.deepEqual(saved[k], original[k], `field ${k} harus identik`);
   }
-  assert.equal(saved.version, original.version);
+  assert.ok(saved.version >= original.version, 'versi data tidak boleh turun');
 });
