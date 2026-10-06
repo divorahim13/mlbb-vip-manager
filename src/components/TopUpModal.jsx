@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { calculatePricing, formatRupiah } from '../utils/pricing';
+import { calculatePricing, formatRupiah, isGloryOrder, RATE_GLORY } from '../utils/pricing';
 import { PlusCircle, Sparkles, DollarSign, Heart, Tag, Plus, Minus } from 'lucide-react';
 
 function TopUpModal({ isOpen, order, onClose, onConfirm }) {
   if (!isOpen || !order) return null;
 
   const [addMatches, setAddMatches] = useState(5);
+  const [isGloryTopUp, setIsGloryTopUp] = useState(isGloryOrder(order));
   const [isFreeTopUp, setIsFreeTopUp] = useState(order.isFree || order.paymentStatus === 'GRATIS');
   const [additionalPayment, setAdditionalPayment] = useState(30000);
   const [paymentMethod, setPaymentMethod] = useState(
@@ -13,7 +14,7 @@ function TopUpModal({ isOpen, order, onClose, onConfirm }) {
   );
 
   // Pricing for the new additional matches
-  const pricing = calculatePricing(addMatches, null, isFreeTopUp);
+  const pricing = calculatePricing(addMatches, null, isFreeTopUp, isGloryTopUp ? 'GLORY' : 'STANDARD');
 
   useEffect(() => {
     if (isFreeTopUp) {
@@ -25,7 +26,7 @@ function TopUpModal({ isOpen, order, onClose, onConfirm }) {
         setPaymentMethod(order.paymentMethod || 'DANA');
       }
     }
-  }, [isFreeTopUp, pricing.total]);
+  }, [isFreeTopUp, isGloryTopUp, pricing.total]);
 
   const handleMatchChange = (delta) => {
     setAddMatches(prev => Math.max(1, prev + delta));
@@ -39,7 +40,8 @@ function TopUpModal({ isOpen, order, onClose, onConfirm }) {
       additionalPrice: isFreeTopUp ? 0 : pricing.total,
       additionalPaid: isFreeTopUp ? 0 : (Number(additionalPayment) || 0),
       paymentMethod,
-      isFree: isFreeTopUp
+      isFree: isFreeTopUp,
+      tier: isGloryTopUp ? 'GLORY' : 'STANDARD'
     });
     onClose();
   };
@@ -130,6 +132,22 @@ function TopUpModal({ isOpen, order, onClose, onConfirm }) {
             </div>
           </div>
 
+          {/* Tarif Glory: Rp 10.000 / match, tanpa paket */}
+          <div className="bg-violet-950/20 p-2.5 rounded-xl border border-violet-500/30">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isGloryTopUp}
+                disabled={isFreeTopUp}
+                onChange={(e) => setIsGloryTopUp(e.target.checked)}
+                className="w-4 h-4 rounded text-violet-500 bg-slate-900 border-slate-700"
+              />
+              <span className="text-xs font-bold text-violet-300">
+                👑 Tarif Glory ({formatRupiah(RATE_GLORY)} / match, tanpa paket)
+              </span>
+            </label>
+          </div>
+
           {/* Special Toggle for Free / Pacar Top Up */}
           <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800">
             <label className="flex items-center gap-2.5 cursor-pointer">
@@ -164,7 +182,7 @@ function TopUpModal({ isOpen, order, onClose, onConfirm }) {
                 <span>Tambahan Biaya:</span>
                 <span className="text-amber-400 font-bold">{formatRupiah(pricing.total)}</span>
               </div>
-              {pricing.savings > 0 && (
+              {pricing.savings > 0 && !isGloryTopUp && (
                 <div className="flex justify-between text-emerald-400 text-[11px]">
                   <span>Hemat Diskon Kelipatan:</span>
                   <span>{formatRupiah(pricing.savings)}</span>

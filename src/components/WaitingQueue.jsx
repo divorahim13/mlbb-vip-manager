@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Plus, CheckCircle, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
-import { formatRupiah } from '../utils/pricing';
+import { formatRupiah, isGloryOrder } from '../utils/pricing';
 import { getCompletionTime, formatDateTime } from '../utils/orderTime';
 
 function WaitingQueue({
@@ -210,6 +210,12 @@ function WaitingQueue({
                               {isJoki ? `🎮 Joki ${order.role}` : `🌟 VIP ${order.role}`}
                             </span>
 
+                            {isGloryOrder(order) && (
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">
+                                👑 Glory
+                              </span>
+                            )}
+
                             {isFirst && (
                               <span className="text-[9px] bg-amber-500 text-slate-950 font-black px-2 py-0.2 rounded-full uppercase">
                                 SIAP MASUK
@@ -371,6 +377,11 @@ function WaitingQueue({
                         <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${co.orderType === 'JOKI' ? 'bg-blue-900/60 text-blue-300' : 'bg-slate-800 text-amber-300'}`}>
                           {co.orderType === 'JOKI' ? `🎮 Joki ${co.role}` : `🌟 VIP ${co.role}`}
                         </span>
+                        {isGloryOrder(co) && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-violet-500/20 text-violet-300 border border-violet-500/40">
+                            👑 Glory
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-slate-400">
                         {co.matchesOrdered} Match Selesai • Total {formatRupiah(co.priceTotal)} ({co.paymentMethod})

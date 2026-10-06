@@ -741,7 +741,7 @@ export default function App() {
   };
 
   // Confirm Top Up
-  const handleTopUpConfirm = ({ orderId, addMatches, additionalPrice, additionalPaid, paymentMethod, isFree }) => {
+  const handleTopUpConfirm = ({ orderId, addMatches, additionalPrice, additionalPaid, paymentMethod, isFree, tier }) => {
     const updatedOrders = orders.map(o => {
       if (o.id === orderId) {
         const newTotalMatches = o.matchesOrdered + addMatches;
@@ -770,7 +770,9 @@ export default function App() {
           paymentMethod: paymentMethod || o.paymentMethod,
           paymentStatus: newPaymentStatus,
           status: newStatus,
-          isFree: isFree || o.isFree || false
+          isFree: isFree || o.isFree || false,
+          // Tarif terakhir yang dipakai menentukan lencana Glory (top up gratis tidak mengubahnya)
+          priceType: isFree ? o.priceType : (tier === 'GLORY' ? 'GLORY' : (o.priceType === 'GLORY' ? 'STANDARD' : o.priceType))
         });
       }
       return o;
@@ -981,6 +983,7 @@ export default function App() {
     text += `• 3 Match: Rp 21.000\n`;
     text += `• 5 Match: Rp 30.000 ⭐ _(Hemat Rp 5.000, cuma 6k/match!)_\n`;
     text += `• 10 Match: Rp 60.000 👑 _(Hemat Rp 10.000!)_\n`;
+    text += `• 👑 Glory: Rp 10.000 / match (tanpa paket)\n`;
     text += `*(Berlaku kelipatan 5 match = 30.000)*\n\n`;
     text += `📲 Mau titip akun joki atau ikut mabar VIP? Langsung chat Admin ya! Gas Winrate Immortal! 🔥`;
 

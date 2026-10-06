@@ -62,7 +62,7 @@ function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 
   // Calculate pricing based on current mode
   const isFree = priceType === 'FREE_PACAR';
   const customPrice = priceType === 'CUSTOM' ? customPriceInput : null;
-  const pricing = calculatePricing(matches, customPrice, isFree);
+  const pricing = calculatePricing(matches, customPrice, isFree, priceType === 'GLORY' ? 'GLORY' : 'STANDARD');
 
   // Auto update amountPaid and paymentMethod when pricing mode changes
   useEffect(() => {
@@ -354,7 +354,7 @@ function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 
                 Pilih Skema Harga:
               </label>
 
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setPriceType('STANDARD')}
@@ -366,6 +366,19 @@ function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 
                 >
                   <span>⚡ Standar</span>
                   <span className="text-[9px] opacity-80">7k / Paket 5=30k</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPriceType('GLORY')}
+                  className={`py-2 px-2 rounded-lg text-xs font-bold border flex flex-col items-center justify-center transition-all ${
+                    priceType === 'GLORY'
+                      ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white border-violet-400 font-black shadow-lg shadow-violet-500/30'
+                      : 'bg-violet-950/30 border-violet-500/30 text-violet-300 hover:border-violet-500/60'
+                  }`}
+                >
+                  <span>👑 Glory</span>
+                  <span className="text-[9px] opacity-90">10k / Match</span>
                 </button>
 
                 <button
@@ -447,6 +460,8 @@ function OrderModal({ isOpen, onClose, onSave, hasEmptySlot, defaultOrderType = 
                   <span className="text-slate-400 font-mono">
                     {priceType === 'CUSTOM' ? (
                       `Harga Khusus Custom`
+                    ) : priceType === 'GLORY' ? (
+                      `${pricing.count}x Match Glory @ ${formatRupiah(10000)}`
                     ) : (
                       <>
                         {pricing.bundleCount > 0 && `${pricing.bundleCount}x Paket 5 (${formatRupiah(pricing.bundleTotal)}) `}

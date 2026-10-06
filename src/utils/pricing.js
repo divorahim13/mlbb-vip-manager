@@ -9,17 +9,24 @@ export const RATE_BUNDLE_PER_MATCH = 6000;
 export const BUNDLE_SIZE = 5;
 export const RATE_BUNDLE_5 = RATE_BUNDLE_PER_MATCH * BUNDLE_SIZE; // Rp 30.000
 
-export function calculatePricing(matches, customPrice = null, isFree = false) {
+// Tarif Glory: Rp 10.000 per match, flat (tanpa paket bundle)
+export const RATE_GLORY = 10000;
+
+export const isGloryOrder = (order) => !!order && order.priceType === 'GLORY';
+
+export function calculatePricing(matches, customPrice = null, isFree = false, tier = 'STANDARD') {
   const count = Math.max(0, parseInt(matches, 10) || 0);
-  const bundleCount = Math.floor(count / BUNDLE_SIZE);
-  const remainder = count % BUNDLE_SIZE;
+  const isGlory = tier === 'GLORY';
+  // Glory tidak memakai paket: semua match dihitung satuan
+  const bundleCount = isGlory ? 0 : Math.floor(count / BUNDLE_SIZE);
+  const remainder = isGlory ? 0 : count % BUNDLE_SIZE;
 
   const bundleTotal = bundleCount * RATE_BUNDLE_5;
   const remainderTotal = remainder * RATE_SINGLE;
-  const standardTotal = bundleTotal + remainderTotal;
+  const standardTotal = isGlory ? count * RATE_GLORY : bundleTotal + remainderTotal;
 
-  // Normal price without discount
-  const normalPrice = count * RATE_SINGLE;
+  // Normal price without discount (Glory: harganya sendiri, tidak ada diskon)
+  const normalPrice = isGlory ? count * RATE_GLORY : count * RATE_SINGLE;
 
   let total = standardTotal;
   let isCustom = false;
@@ -47,7 +54,8 @@ export function calculatePricing(matches, customPrice = null, isFree = false) {
     effectivePerMatch,
     normalPrice,
     isCustom,
-    isFree
+    isFree,
+    isGlory
   };
 }
 
