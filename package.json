@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test tests/dbHandler.test.mjs",
+    "test": "node --test tests/dbHandler.test.mjs tests/orderTime.test.mjs",
     "deploy:netlify": "vite build && netlify deploy --prod --dir=dist --functions=netlify/functions --no-build"
   },
   "dependencies": {

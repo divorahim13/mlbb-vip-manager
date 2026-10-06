@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { ArrowUp, ArrowDown, UserCheck, Trash2, Clock, Phone, DollarSign, Plus, CheckCircle, Gamepad2, KeyRound, Edit3 } from 'lucide-react';
 import { formatRupiah } from '../utils/pricing';
+import { getCompletionTime, formatDateTime } from '../utils/orderTime';
 
 function WaitingQueue({
   waitingOrders = [],
   completedOrders = [],
+  matchHistory = [],
   roomParty = {},
   onFillNextSlot,
   onMoveOrder,
@@ -373,6 +375,15 @@ function WaitingQueue({
                       <div className="text-[10px] text-slate-400">
                         {co.matchesOrdered} Match Selesai • Total {formatRupiah(co.priceTotal)} ({co.paymentMethod})
                       </div>
+                      {(() => {
+                        const doneAt = formatDateTime(getCompletionTime(co, matchHistory));
+                        return doneAt ? (
+                          <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                            <Clock className="w-2.5 h-2.5" />
+                            <span>Selesai {doneAt}</span>
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
 

@@ -12,6 +12,7 @@ import PayoutModal from './components/PayoutModal';
 import { playSound } from './utils/sound';
 import { formatRupiah } from './utils/pricing';
 import { fetchCloudData, saveCloudData, discardPendingCloudSave, onCloudSaved } from './utils/cloudSync';
+import { stampCompletion } from './utils/orderTime';
 import {
   STORAGE_KEYS,
   INITIAL_ORDERS,
@@ -526,7 +527,7 @@ export default function App() {
       }
     }
 
-    const updatedOrders = orders.map(o => (o.id === updatedOrder.id ? updatedOrder : o));
+    const updatedOrders = orders.map(o => (o.id === updatedOrder.id ? stampCompletion(o, updatedOrder) : o));
 
     setOrders(updatedOrders);
     setRoomParty(updatedRoom);
@@ -545,18 +546,18 @@ export default function App() {
     const existingOrderId = roomParty[slotKey];
     let updatedOrders = orders.map(o => {
       if (o.id === existingOrderId) {
-        return {
+        return stampCompletion(o, {
           ...o,
           status: o.matchesRemaining > 0 ? 'WAITING' : 'COMPLETED',
           roomSlot: null
-        };
+        });
       }
       if (o.id === orderId) {
-        return {
+        return stampCompletion(o, {
           ...o,
           status: 'IN_ROOM',
           roomSlot: slotKey
-        };
+        });
       }
       return o;
     });
@@ -597,7 +598,7 @@ export default function App() {
     const order = orders.find(o => o.id === orderId);
     const newStatus = order && order.matchesRemaining > 0 ? 'WAITING' : 'COMPLETED';
 
-    const updatedOrders = orders.map(o => (o.id === orderId ? { ...o, status: newStatus, roomSlot: null } : o));
+    const updatedOrders = orders.map(o => (o.id === orderId ? stampCompletion(o, { ...o, status: newStatus, roomSlot: null }) : o));
     const updatedRoom = { ...roomParty, [slotKey]: null };
 
     setOrders(updatedOrders);
@@ -655,11 +656,11 @@ export default function App() {
         if (newRemaining === 0) {
           expiredList.push(`@${ord.username}`);
         }
-        return {
+        return stampCompletion(ord, {
           ...ord,
           matchesRemaining: newRemaining,
           status: newRemaining === 0 ? 'COMPLETED' : 'IN_ROOM'
-        };
+        });
       }
       return ord;
     });
@@ -760,7 +761,7 @@ export default function App() {
           newPaymentStatus = 'BELUM_BAYAR';
         }
 
-        return {
+        return stampCompletion(o, {
           ...o,
           matchesOrdered: newTotalMatches,
           matchesRemaining: newRemaining,
@@ -770,7 +771,7 @@ export default function App() {
           paymentStatus: newPaymentStatus,
           status: newStatus,
           isFree: isFree || o.isFree || false
-        };
+        });
       }
       return o;
     });
@@ -1123,6 +1124,7 @@ export default function App() {
             <WaitingQueue
               waitingOrders={waitingOrders}
               completedOrders={completedOrders}
+              matchHistory={matchHistory}
               roomParty={roomParty}
               onFillNextSlot={handleFillNextSlot}
               onMoveOrder={handleMoveOrder}
