@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/dbHandler.test.mjs",
+    "deploy:netlify": "vite build && netlify deploy --prod --dir=dist --functions=netlify/functions --no-build"
   },
   "dependencies": {
-    "@vercel/blob": "^2.8.0",
+    "@netlify/blobs": "^11.1.3",
     "lucide-react": "^1.49.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

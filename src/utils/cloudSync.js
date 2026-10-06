@@ -1,13 +1,27 @@
-// Utilitas Sinkronisasi Cloud Database Vercel
-// Menggunakan Direct Public Blob Edge CDN untuk READ (0 Serverless Invocations, 0 Advanced Operations, Sub-30ms)
-// Dan Serverless API /api/data untuk WRITE (POST)
+// Utilitas Sinkronisasi Cloud Database (Netlify Function + Netlify Blobs)
+// READ (GET) dan WRITE (POST) sama-sama lewat /api/data.
 //
-// PENTING: setiap WRITE = 1 put() = 1 "Blob Advanced Operation" (kuota Hobby: 2.000/bulan).
-// Karena itu semua penyimpanan ke cloud DIGABUNG (debounce + max-wait) dan dilewati jika
-// isinya sama dengan yang sudah ada di cloud. Data lokal tetap tersimpan langsung di localStorage.
+// PENTING (paket Free Netlify = 300 kredit/bulan, batas keras; semua situs akun berhenti jika habis):
+// setiap panggilan ke /api/data = 1 request + sedikit compute. Karena itu:
+// - penyimpanan ke cloud DIGABUNG (debounce + max-wait) dan dilewati jika isinya sama dengan cloud
+// - ada pembatas lokal jumlah baca/tulis per jam (rem darurat terhadap loop/bug)
+// Data lokal tetap tersimpan langsung di localStorage, jadi tidak ada data hilang saat cloud ditahan.
 
-const PUBLIC_CDN_URL = 'https://jgi9lwivzsm9oyrp.public.blob.vercel-storage.com/mlbb-live-db.json';
 const API_URL = '/api/data';
+
+const MAX_READS_PER_HOUR = 120;
+const MAX_WRITES_PER_HOUR = 40; // normalnya <= 20/jam (debounce 20 dtk, max-wait 3 mnt)
+const HOUR_MS = 3600000;
+const readTimes = [];
+const writeTimes = [];
+
+function underHourlyLimit(times, max) {
+  const now = Date.now();
+  while (times.length && now - times[0] > HOUR_MS) times.shift();
+  if (times.length >= max) return false;
+  times.push(now);
+  return true;
+}
 
 const SAVE_DEBOUNCE_MS = 20000; // tunggu 20 dtk tanpa aksi baru sebelum upload
 const SAVE_MAX_WAIT_MS = 180000; // paling lama 3 menit sejak perubahan pertama
@@ -52,48 +66,15 @@ function rememberCloudData(data) {
 }
 
 export async function fetchCloudData() {
-  const now = Date.now();
-
-  // Jalur 1 (Utama): Baca langsung dari Edge CDN publik
-  // Bebas kuota serverless execution & response super cepat dari Cloudflare/Vercel Edge (sin1)
-  try {
-    const cdnRes = await fetch(`${PUBLIC_CDN_URL}?t=${now}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      },
-      cache: 'no-store'
-    });
-
-    if (cdnRes.ok) {
-      const data = await cdnRes.json();
-      rememberCloudData(data);
-      return {
-        success: true,
-        exists: true,
-        data,
-        updatedAt: data.updatedAt || new Date().toISOString()
-      };
-    } else if (cdnRes.status === 404) {
-      return {
-        success: true,
-        exists: false,
-        data: null
-      };
-    }
-  } catch (cdnErr) {
-    console.warn('Direct CDN read warning, falling back to API:', cdnErr.message);
+  if (!underHourlyLimit(readTimes, MAX_READS_PER_HOUR)) {
+    console.warn('Batas baca cloud per jam tercapai, pakai data lokal dulu.');
+    return { success: false, error: 'read-rate-limited-locally', data: null };
   }
 
-  // Jalur 2 (Cadangan): Fallback ke Serverless /api/data jika jalur CDN terkendala
   try {
-    const res = await fetch(`${API_URL}?t=${now}`, {
+    const res = await fetch(API_URL, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
-      },
+      headers: { 'Accept': 'application/json' },
       cache: 'no-store'
     });
 
@@ -105,7 +86,7 @@ export async function fetchCloudData() {
     if (json && json.exists && json.data) rememberCloudData(json.data);
     return json;
   } catch (err) {
-    console.warn('Gagal mengambil data dari Cloud DB fallback:', err.message);
+    console.warn('Gagal mengambil data dari Cloud DB:', err.message);
     return { success: false, error: err.message, data: null };
   }
 }
@@ -144,6 +125,13 @@ async function doFlush({ keepalive = false } = {}) {
   if (hashData(payload) === lastKnownCloudHash) {
     if (pendingPayload === payload) pendingPayload = null;
     return { success: true, skipped: true, updatedAt: payload.updatedAt };
+  }
+
+  // Rem darurat: terlalu banyak upload dalam 1 jam -> tahan dulu (data tetap aman di localStorage)
+  if (!underHourlyLimit(writeTimes, MAX_WRITES_PER_HOUR)) {
+    console.warn('Batas upload cloud per jam tercapai, upload ditahan dan dicoba lagi nanti.');
+    scheduleRetry();
+    return { success: false, error: 'write-rate-limited-locally' };
   }
 
   try {

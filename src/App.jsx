@@ -265,9 +265,9 @@ export default function App() {
         return;
       }
 
-      // Throttle: don't sync more often than once every 45 seconds unless manually requested
+      // Throttle: don't sync more often than once every 60 seconds unless manually requested
       const now = Date.now();
-      if (now - lastSyncCheckTimeRef.current < 45000) {
+      if (now - lastSyncCheckTimeRef.current < 60000) {
         return;
       }
       lastSyncCheckTimeRef.current = now;
